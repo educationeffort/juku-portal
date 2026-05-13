@@ -534,6 +534,166 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
 }
 
 // ─────────────────────────────────────────
+// STUDENTS PANEL（講師用）
+// ─────────────────────────────────────────
+function StudentsPanel({ students }) {
+  const GRADES = ["小学1年","小学2年","小学3年","小学4年","小学5年","小学6年",
+                  "中学1年","中学2年","中学3年","高校1年","高校2年","高校3年","その他"];
+  const BLANK = { name:"", grade:"中学1年", studentId:"", email:"", password:"" };
+  const [form, setForm]       = useState(BLANK);
+  const [adding, setAdding]   = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg]         = useState("");
+  const [showPw, setShowPw]   = useState(false);
+  const [delTarget, setDelTarget] = useState(null);
+
+  function genId() {
+    const num = String(students.length + 1).padStart(3, "0");
+    setForm(f => ({ ...f, studentId: "s" + num }));
+  }
+
+  function genPw() {
+    const chars = "abcdefghjkmnpqrstuvwxyz23456789";
+    const pw = Array.from({length: 8}, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+    setForm(f => ({ ...f, password: pw }));
+    setShowPw(true);
+  }
+
+  async function handleAdd() {
+    if (!form.name || !form.studentId || !form.email || !form.password) {
+      setMsg("⚠ すべての項目を入力してください"); return;
+    }
+    if (students.find(s => s.studentId === form.studentId)) {
+      setMsg("⚠ そのIDはすでに使われています"); return;
+    }
+    setLoading(true); setMsg("");
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, form.email, form.password);
+      const uid  = cred.user.uid;
+      await setDoc(doc(db, "students", form.studentId), {
+        name: form.name, grade: form.grade,
+        studentId: form.studentId, email: form.email, uid,
+        createdAt: serverTimestamp(),
+      });
+      setMsg("✅ 生徒を追加しました！");
+      setForm(BLANK); setAdding(false); setShowPw(false);
+    } catch(e) {
+      setMsg("⚠ エラー：" + e.message);
+    }
+    setLoading(false);
+  }
+
+  async function handleDelete() {
+    await deleteDoc(doc(db, "students", delTarget.studentId));
+    setDelTarget(null);
+  }
+
+  return (
+    <>
+      {/* 追加ボタン */}
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+        <button className="btn-submit" style={{margin:0,fontSize:13,padding:"10px 20px"}}
+          onClick={()=>{setAdding(!adding);setMsg("")}}>
+          {adding ? "✕ キャンセル" : "＋ 生徒を追加"}
+        </button>
+      </div>
+
+      {/* 追加フォーム */}
+      {adding && (
+        <div className="form-card" style={{marginBottom:16}}>
+          <h2>＋ 新しい生徒を追加</h2>
+          <div className="form-row">
+            <label>名前</label>
+            <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="例：田中 花子" />
+          </div>
+          <div className="form-row">
+            <label>学年</label>
+            <select value={form.grade} onChange={e=>setForm(f=>({...f,grade:e.target.value}))}>
+              {GRADES.map(g=><option key={g}>{g}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>生徒ID（ログインには使いません・管理用）</label>
+            <div style={{display:"flex",gap:8}}>
+              <input value={form.studentId} onChange={e=>setForm(f=>({...f,studentId:e.target.value}))} placeholder="例：s004" style={{flex:1}} />
+              <button type="button" className="btn-cancel" style={{padding:"10px 14px",fontSize:13,whiteSpace:"nowrap"}} onClick={genId}>自動生成</button>
+            </div>
+          </div>
+          <div className="form-row">
+            <label>メールアドレス（ログインに使用）</label>
+            <input type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="例：hanako@example.com" />
+          </div>
+          <div className="form-row">
+            <label>パスワード</label>
+            <div style={{display:"flex",gap:8}}>
+              <div style={{position:"relative",flex:1}}>
+                <input
+                  type={showPw?"text":"password"}
+                  value={form.password}
+                  onChange={e=>setForm(f=>({...f,password:e.target.value}))}
+                  placeholder="パスワードを設定"
+                  style={{width:"100%"}}
+                />
+                <button type="button" onClick={()=>setShowPw(v=>!v)}
+                  style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:15}}>
+                  {showPw?"🙈":"👁"}
+                </button>
+              </div>
+              <button type="button" className="btn-cancel" style={{padding:"10px 14px",fontSize:13,whiteSpace:"nowrap"}} onClick={genPw}>自動生成</button>
+            </div>
+            {form.password && (
+              <div style={{marginTop:6,padding:"8px 12px",background:"var(--orange-lt)",borderRadius:8,fontSize:12,color:"var(--orange)",fontWeight:700}}>
+                ⚠ このパスワードをメモして生徒に渡してください
+              </div>
+            )}
+          </div>
+          <button className="btn-submit" onClick={handleAdd} disabled={loading}>
+            {loading ? "追加中..." : "✅ 追加する"}
+          </button>
+          {msg && <div style={{marginTop:10,fontSize:13,fontWeight:700,color:msg.startsWith("✅")?"var(--green)":"var(--red)"}}>{msg}</div>}
+        </div>
+      )}
+
+      {/* 一覧 */}
+      <div className="t-table">
+        <table>
+          <thead><tr><th>名前</th><th>学年</th><th>メールアドレス</th><th>生徒ID</th><th></th></tr></thead>
+          <tbody>
+            {students.length===0 && (
+              <tr><td colSpan={5} style={{textAlign:"center",padding:"28px",color:"var(--gray)"}}>生徒が登録されていません</td></tr>
+            )}
+            {students.map(s=>(
+              <tr key={s.id}>
+                <td style={{fontWeight:700}}>{s.name}</td>
+                <td>{s.grade}</td>
+                <td style={{fontSize:12,color:"var(--gray)"}}>{s.email}</td>
+                <td style={{fontFamily:"monospace",fontSize:12,color:"var(--gray)"}}>{s.studentId}</td>
+                <td><button className="btn-del" onClick={()=>setDelTarget(s)}>削除</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 削除確認 */}
+      {delTarget && (
+        <div className="del-overlay" onClick={()=>setDelTarget(null)}>
+          <div className="del-modal" onClick={e=>e.stopPropagation()}>
+            <div className="del-icon-big">👤</div>
+            <div className="del-title">{delTarget.name} を削除しますか？</div>
+            <div className="del-sub">Firestoreのデータが削除されます。<br/>ログインはできなくなります。</div>
+            <div className="del-btns">
+              <button className="btn-cancel" onClick={()=>setDelTarget(null)}>キャンセル</button>
+              <button className="btn-del-confirm" onClick={handleDelete}>削除する</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─────────────────────────────────────────
 // TEACHER APP
 // ─────────────────────────────────────────
 function TeacherApp({ onLogout }) {
@@ -740,25 +900,7 @@ function TeacherApp({ onLogout }) {
 
         {/* STUDENTS */}
         {tab==="students" && (
-          <div className="t-table">
-            <table>
-              <thead><tr><th>名前</th><th>学年</th><th>生徒ID</th></tr></thead>
-              <tbody>
-                {students.map(s=>(
-                  <tr key={s.id}>
-                    <td style={{fontWeight:700}}>{s.name}</td>
-                    <td>{s.grade}</td>
-                    <td style={{fontFamily:"monospace",fontSize:12,color:"var(--gray)"}}>{s.studentId}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div style={{padding:"16px 16px 20px",borderTop:"1px solid var(--border)"}}>
-              <p style={{fontSize:13,color:"var(--gray)"}}>
-                ＋ 生徒の追加はガイドの Step 5〜6 を参照してください（Firebase Console + 講師画面から登録）
-              </p>
-            </div>
-          </div>
+          <StudentsPanel students={students} />
         )}
       </div>
     </>
