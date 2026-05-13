@@ -384,10 +384,16 @@ function HwSheet({ m, mySubmission, studentInfo, onClose, onSubmit }) {
           </div>
         </div>
         <div className="sheet-body">
-          <div className="sheet-file-box" style={{paddingBottom:20}}>
-            <div className="sheet-file-icon">{m.icon}</div>
-            <div className="sheet-file-hint">宿題プリントを確認する</div>
-            <a href={m.url} target="_blank" rel="noreferrer" className="btn-open" style={{fontSize:14,padding:"12px 24px"}}>📂 プリントを開く</a>
+          <div style={{marginBottom:0,paddingBottom:8}}>
+            <iframe
+              src={m.url}
+              title={m.title}
+              style={{width:"100%",height:"340px",border:"none",borderRadius:12,background:"var(--bg)",marginBottom:8}}
+            />
+            <a href={m.url} target="_blank" rel="noreferrer"
+              style={{display:"block",textAlign:"center",padding:"10px",background:"var(--bg)",borderRadius:10,fontSize:13,fontWeight:700,color:"var(--gray)",textDecoration:"none",marginBottom:8}}>
+              📂 別タブで開く
+            </a>
           </div>
           <hr className="submit-divider" />
           <div className="submit-section-title">📬 宿題を提出する</div>
@@ -448,6 +454,7 @@ function HwSheet({ m, mySubmission, studentInfo, onClose, onSubmit }) {
 // ─────────────────────────────────────────
 function ContentSheet({ m, onClose }) {
   const isVideo = m.sub === "動画";
+  const isPdf   = ["PDF","スライド","授業前テスト","解答"].includes(m.sub);
   return (
     <div className="overlay" onClick={onClose}>
       <div className="sheet" onClick={e=>e.stopPropagation()}>
@@ -455,19 +462,32 @@ function ContentSheet({ m, onClose }) {
         <div className="sheet-head">
           <div className="sheet-title">{m.icon} {m.title}</div>
           <div className="sheet-sub">
-            <span className={`badge ${m.type==="class"?"badge-class":"badge-ans"}`}>{m.sub}</span>
+            <span className={`badge ${m.type==="class"?"badge-class":m.type==="pretest"?"badge-new":"badge-ans"}`}>{m.sub}</span>
             <span>配信日：{m.date}</span>
           </div>
         </div>
         <div className="sheet-body">
-          {isVideo
-            ? <iframe className="sheet-iframe" src={m.url} title={m.title} allowFullScreen />
-            : <div className="sheet-file-box">
-                <div className="sheet-file-icon">{m.icon}</div>
-                <div className="sheet-file-hint">タップしてファイルを開く</div>
-                <a href={m.url} target="_blank" rel="noreferrer" className="btn-open">📂 ファイルを開く</a>
-              </div>
-          }
+          {isVideo ? (
+            <iframe className="sheet-iframe" src={m.url} title={m.title} allowFullScreen />
+          ) : isPdf ? (
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <iframe
+                src={m.url}
+                title={m.title}
+                style={{width:"100%",height:"460px",border:"none",borderRadius:12,background:"var(--bg)"}}
+              />
+              <a href={m.url} target="_blank" rel="noreferrer"
+                style={{display:"block",textAlign:"center",padding:"11px",background:"var(--bg)",borderRadius:10,fontSize:13,fontWeight:700,color:"var(--gray)",textDecoration:"none"}}>
+                📂 別タブで開く
+              </a>
+            </div>
+          ) : (
+            <div className="sheet-file-box">
+              <div className="sheet-file-icon">{m.icon}</div>
+              <div className="sheet-file-hint">タップしてファイルを開く</div>
+              <a href={m.url} target="_blank" rel="noreferrer" className="btn-open">📂 ファイルを開く</a>
+            </div>
+          )}
           <button className="btn-close-sheet" onClick={onClose}>閉じる</button>
         </div>
       </div>
@@ -1157,6 +1177,8 @@ function TeacherApp({ onLogout }) {
   const [submissions, setSubmissions] = useState([]);
   const [testResults, setTestResults] = useState([]);
   const [form,        setForm]        = useState({ title:"", sub:"PDF", url:"", deadline:"", targets:[] });
+  const [uploadFile,  setUploadFile]  = useState(null);
+  const [uploading,   setUploading]   = useState(false);
   const [done,        setDone]        = useState(false);
 
   useEffect(() => {
@@ -1169,18 +1191,34 @@ function TeacherApp({ onLogout }) {
 
   // ── 教材配信 ──
   async function handleUpload() {
-    if (!form.title || !form.url || form.targets.length===0) { alert("タイトル・URL・対象生徒を入力してください"); return; }
-    const icon = SUB_TO_ICON[form.sub] || "📄";
-    const type = SUB_TO_TYPE[form.sub] || "class";
-    await addDoc(collection(db, "materials"), {
-      title: form.title, sub: form.sub, type, icon, url: form.url,
-      date: new Date().toISOString().slice(0,10),
-      targets: form.targets,
-      ...(form.deadline ? {deadline: form.deadline} : {}),
-      createdAt: serverTimestamp(),
-    });
-    setDone(true); setTimeout(()=>setDone(false),2500);
-    setForm({title:"",sub:"PDF",url:"",deadline:"",targets:[]});
+    if (!form.title || form.targets.length===0) { alert("タイトルと対象生徒を入力してください"); return; }
+    if (!uploadFile && !form.url) { alert("ファイルをアップロードするかURLを入力してください"); return; }
+    setUploading(true);
+    try {
+      let finalUrl = form.url;
+      // ファイルアップロードの場合はStorageに保存
+      if (uploadFile) {
+        const fileId = `materials/${Date.now()}_${uploadFile.name}`;
+        const fileRef = ref(storage, fileId);
+        await uploadBytes(fileRef, uploadFile);
+        finalUrl = await getDownloadURL(fileRef);
+      }
+      const icon = SUB_TO_ICON[form.sub] || "📄";
+      const type = SUB_TO_TYPE[form.sub] || "class";
+      await addDoc(collection(db, "materials"), {
+        title: form.title, sub: form.sub, type, icon, url: finalUrl,
+        date: new Date().toISOString().slice(0,10),
+        targets: form.targets,
+        ...(form.deadline ? {deadline: form.deadline} : {}),
+        createdAt: serverTimestamp(),
+      });
+      setDone(true); setTimeout(()=>setDone(false),2500);
+      setForm({title:"",sub:"PDF",url:"",deadline:"",targets:[]});
+      setUploadFile(null);
+    } catch(e) {
+      alert("アップロードエラー：" + e.message);
+    }
+    setUploading(false);
   }
 
   // ── 教材削除 ──
@@ -1283,7 +1321,23 @@ function TeacherApp({ onLogout }) {
                 <option>PDF</option><option>スライド</option><option>動画</option><option>宿題</option><option>解答</option><option>授業前テスト</option>
               </select>
             </div>
-            <div className="form-row"><label>URL（Google Drive / YouTube 等）</label><input value={form.url} onChange={e=>setForm(f=>({...f,url:e.target.value}))} placeholder="https://..." /></div>
+            <div className="form-row">
+              <label>ファイルをアップロード（PDF・画像）</label>
+              <div style={{border:"2px dashed var(--border)",borderRadius:10,padding:"16px",background:"var(--bg)",textAlign:"center",position:"relative",cursor:"pointer"}}
+                onClick={()=>document.getElementById("file-upload").click()}>
+                <input id="file-upload" type="file" accept=".pdf,image/*"
+                  style={{display:"none"}}
+                  onChange={e=>{setUploadFile(e.target.files[0]);setForm(f=>({...f,url:""}))}} />
+                {uploadFile
+                  ? <div style={{fontSize:14,fontWeight:700,color:"var(--green)"}}>✅ {uploadFile.name}</div>
+                  : <div style={{fontSize:13,color:"var(--gray)"}}>📎 タップしてファイルを選択<br/><span style={{fontSize:11}}>PDF・画像に対応</span></div>
+                }
+              </div>
+            </div>
+            <div className="form-row">
+              <label>またはURL（YouTube動画・外部リンク）</label>
+              <input value={form.url} onChange={e=>{setForm(f=>({...f,url:e.target.value}));setUploadFile(null)}} placeholder="https://..." />
+            </div>
             {form.sub==="宿題" && <div className="form-row"><label>提出期限</label><input type="date" value={form.deadline} onChange={e=>setForm(f=>({...f,deadline:e.target.value}))} /></div>}
             <div className="form-row">
               <label>対象生徒</label>
@@ -1299,7 +1353,7 @@ function TeacherApp({ onLogout }) {
                 </label>
               </div>
             </div>
-            <button className="btn-submit" onClick={handleUpload}>📤 配信する</button>
+            <button className="btn-submit" onClick={handleUpload} disabled={uploading}>{uploading ? "アップロード中..." : "📤 配信する"}</button>
             {done && <span className="ok-msg">✅ 配信しました！</span>}
           </div>
         )}
