@@ -21,8 +21,8 @@ import { auth, db, storage } from "./firebase";
 const TODAY = new Date().toLocaleDateString("ja-JP", {
   year:"numeric", month:"long", day:"numeric", weekday:"long"
 });
-const SUB_TO_TYPE = { PDF:"class", スライド:"class", 動画:"class", 宿題:"hw", 解答:"answer" };
-const SUB_TO_ICON = { PDF:"📄", スライド:"📊", 動画:"🎬", 宿題:"📝", 解答:"✅" };
+const SUB_TO_TYPE = { PDF:"class", スライド:"class", 動画:"class", 宿題:"hw", 解答:"answer", 授業前テスト:"pretest" };
+const SUB_TO_ICON = { PDF:"📄", スライド:"📊", 動画:"🎬", 宿題:"📝", 解答:"✅", 授業前テスト:"🎯" };
 
 async function isTeacherUid(uid) {
   const snap = await getDoc(doc(db, "config", "teacher"));
@@ -536,10 +536,11 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
     setTestSending(false);
   }
 
-  const classItems  = materials.filter(m => m.type === "class");
-  const answerItems = materials.filter(m => m.type === "answer");
-  const hwItems     = materials.filter(m => m.type === "hw");
+  const classItems    = materials.filter(m => m.type === "class");
+  const answerItems   = materials.filter(m => m.type === "answer");
+  const hwItems       = materials.filter(m => m.type === "hw");
   const hwSubmitItems = materials.filter(m => m.type === "hw");
+  const pretestItems  = materials.filter(m => m.type === "pretest");
 
   function getMySubmission(hwId) {
     return submissions.find(s => s.hwId === hwId);
@@ -639,6 +640,27 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
             <div className="sec-bar" style={{background:"#e74c3c"}} />
             <span className="sec-label">🎯 授業前テスト</span>
           </div>
+
+          {/* テスト用PDF */}
+          {pretestItems.length > 0 && (
+            <div className="tiles" style={{marginBottom:14}}>
+              {pretestItems.map(m => (
+                <div key={m.id} className="tile" onClick={()=>setSel(m)}>
+                  <div className="tile-icon" style={{background:"#fde8e8",fontSize:26,width:56,height:56,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>🎯</div>
+                  <div className="tile-body">
+                    <div className="tile-title">{m.title}</div>
+                    <div className="tile-meta">
+                      <span className="badge" style={{background:"#fde8e8",color:"#e74c3c"}}>授業前テスト</span>
+                      <span className="tile-date">{m.date}</span>
+                    </div>
+                  </div>
+                  <div className="tile-arrow">›</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 正解数入力 */}
           {todayTest ? (
             <div style={{background:"var(--green-lt)",border:"1.5px solid var(--green)",borderRadius:14,padding:"18px 20px",display:"flex",alignItems:"center",gap:14}}>
               <span style={{fontSize:32}}>✅</span>
@@ -1258,7 +1280,7 @@ function TeacherApp({ onLogout }) {
             <div className="form-row"><label>タイトル</label><input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="例：数学 二次方程式 解説" /></div>
             <div className="form-row"><label>種別</label>
               <select value={form.sub} onChange={e=>setForm(f=>({...f,sub:e.target.value}))}>
-                <option>PDF</option><option>スライド</option><option>動画</option><option>宿題</option><option>解答</option>
+                <option>PDF</option><option>スライド</option><option>動画</option><option>宿題</option><option>解答</option><option>授業前テスト</option>
               </select>
             </div>
             <div className="form-row"><label>URL（Google Drive / YouTube 等）</label><input value={form.url} onChange={e=>setForm(f=>({...f,url:e.target.value}))} placeholder="https://..." /></div>
