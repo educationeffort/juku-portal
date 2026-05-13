@@ -147,6 +147,9 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 .login-logo-icon{font-size:48px;margin-bottom:8px}
 .login-logo-name{font-size:22px;font-weight:900;color:var(--navy)}
 .login-logo-sub{font-size:11px;color:var(--gray);letter-spacing:2px;margin-top:3px}
+.login-tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:24px}
+.login-tab{flex:1;padding:11px;text-align:center;cursor:pointer;font-size:15px;font-weight:700;color:var(--gray);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .18s}
+.login-tab.active{color:var(--navy);border-bottom-color:var(--blue)}
 .field{margin-bottom:16px}
 .field label{display:block;font-size:12px;font-weight:700;color:var(--gray);margin-bottom:6px;letter-spacing:.8px}
 .field input,.field select{width:100%;padding:14px 15px;border:1.5px solid var(--border);border-radius:11px;font-size:15px;font-family:inherit;background:var(--bg);outline:none;transition:border-color .18s}
@@ -221,16 +224,38 @@ function Loading() {
 // LOGIN
 // ─────────────────────────────────────────
 function LoginPage({ onLogin }) {
-  const [email, setEmail] = useState("");
+  const [tab, setTab]     = useState("student");
+  const [studentId, setStudentId] = useState("");
   const [pw, setPw]       = useState("");
+  const [email, setEmail] = useState("");
+  const [tpw, setTpw]     = useState("");
   const [err, setErr]     = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function login() {
+  async function loginStudent() {
+    if (!studentId.trim() || !pw) { setErr("IDとパスワードを入力してください"); return; }
     setErr(""); setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), pw);
-      // onAuthStateChanged が自動でキャッチするので何もしなくてOK
+      // FirestoreでIDからメールアドレスを検索
+      const snap = await getDocs(collection(db, "students"));
+      const found = snap.docs.find(d => d.data().studentId === studentId.trim());
+      if (!found) {
+        setErr("IDまたはパスワードが正しくありません");
+        setLoading(false); return;
+      }
+      const email = found.data().email;
+      await signInWithEmailAndPassword(auth, email, pw);
+    } catch {
+      setErr("IDまたはパスワードが正しくありません");
+    }
+    setLoading(false);
+  }
+
+  async function loginTeacher() {
+    if (!email.trim() || !tpw) { setErr("メールアドレスとパスワードを入力してください"); return; }
+    setErr(""); setLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), tpw);
     } catch {
       setErr("メールアドレスまたはパスワードが正しくありません");
     }
@@ -247,20 +272,46 @@ function LoginPage({ onLogin }) {
             <div className="login-logo-name">学習塾ポータル</div>
             <div className="login-logo-sub">LEARNING PORTAL</div>
           </div>
-          <div className="field">
-            <label>メールアドレス</label>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
-              placeholder="メールアドレスを入力" onKeyDown={e=>e.key==="Enter"&&login()} />
+          <div className="login-tabs">
+            <div className={`login-tab ${tab==="student"?"active":""}`} onClick={()=>{setTab("student");setErr("")}}>生徒</div>
+            <div className={`login-tab ${tab==="teacher"?"active":""}`} onClick={()=>{setTab("teacher");setErr("")}}>講師</div>
           </div>
-          <div className="field">
-            <label>パスワード</label>
-            <input type="password" value={pw} onChange={e=>setPw(e.target.value)}
-              placeholder="パスワードを入力" onKeyDown={e=>e.key==="Enter"&&login()} />
-          </div>
-          <div className="login-hint">IDとパスワードは塾からお渡しします</div>
-          <button className="btn-login" onClick={login} disabled={loading}>
-            {loading ? "ログイン中..." : "ログイン →"}
-          </button>
+          {tab==="student" ? (<>
+            <div className="field">
+              <label>生徒ID</label>
+              <input value={studentId} onChange={e=>setStudentId(e.target.value)}
+                placeholder="塾から配布されたIDを入力"
+                autoComplete="username"
+                onKeyDown={e=>e.key==="Enter"&&loginStudent()} />
+            </div>
+            <div className="field">
+              <label>パスワード</label>
+              <input type="password" value={pw} onChange={e=>setPw(e.target.value)}
+                placeholder="パスワードを入力"
+                autoComplete="current-password"
+                onKeyDown={e=>e.key==="Enter"&&loginStudent()} />
+            </div>
+            <div className="login-hint">IDとパスワードは塾からお渡しします</div>
+            <button className="btn-login" onClick={loginStudent} disabled={loading}>
+              {loading ? "ログイン中..." : "ログイン →"}
+            </button>
+          </>) : (<>
+            <div className="field">
+              <label>メールアドレス</label>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                placeholder="メールアドレスを入力"
+                onKeyDown={e=>e.key==="Enter"&&loginTeacher()} />
+            </div>
+            <div className="field">
+              <label>パスワード</label>
+              <input type="password" value={tpw} onChange={e=>setTpw(e.target.value)}
+                placeholder="パスワードを入力"
+                onKeyDown={e=>e.key==="Enter"&&loginTeacher()} />
+            </div>
+            <button className="btn-login" onClick={loginTeacher} disabled={loading}>
+              {loading ? "ログイン中..." : "ログイン →"}
+            </button>
+          </>)}
           {err && <p className="login-err">⚠ {err}</p>}
         </div>
       </div>
