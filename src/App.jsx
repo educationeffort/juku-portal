@@ -37,11 +37,11 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#eef2f7; --white:#fff;
-  --navy:#1a3a5c; --navy2:#2a5080;
-  --blue:#2e86de; --blue-lt:#ddeeff;
+  --bg:#f0f4f8; --white:#fff;
+  --navy:#004499; --navy2:#0066CC;
+  --blue:#0066CC; --blue-lt:#ddeeff;
+  --green:#00A651; --green-lt:#d4f5e2;
   --orange:#e67e22; --orange-lt:#fdebd0;
-  --green:#27ae60; --green-lt:#d5f5e3;
   --purple:#7b52ab; --purple-lt:#ede8fd;
   --red:#e74c3c; --red-lt:#fde8e8;
   --gray:#6b7a8d; --border:#dde3ea; --text:#1a2535;
@@ -64,7 +64,7 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 .section{margin-bottom:30px}
 .sec-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .sec-bar{width:5px;height:28px;border-radius:3px;flex-shrink:0}
-.sec-bar-blue{background:var(--blue)}.sec-bar-orange{background:var(--orange)}
+.sec-bar-blue{background:var(--blue)}.sec-bar-orange{background:var(--orange)}.sec-bar-green{background:var(--green)}.sec-bar-purple{background:var(--purple)}
 .sec-label{font-size:18px;font-weight:900}
 .sec-count{margin-left:auto;font-size:12px;font-weight:700;background:#fff;color:var(--gray);padding:3px 11px;border-radius:20px;border:1px solid var(--border)}
 .tiles{display:flex;flex-direction:column;gap:12px}
@@ -269,8 +269,8 @@ function LoginPage({ onLogin }) {
         <div className="login-card">
           <div className="login-logo">
             <div className="login-logo-icon">🎓</div>
-            <div className="login-logo-name">学習塾ポータル</div>
-            <div className="login-logo-sub">LEARNING PORTAL</div>
+            <div className="login-logo-name">学習塾EFFORT授業用サイト</div>
+            <div className="login-logo-sub">EFFORT LEARNING PORTAL</div>
           </div>
           <div className="login-tabs">
             <div className={`login-tab ${tab==="student"?"active":""}`} onClick={()=>{setTab("student");setErr("")}}>生徒</div>
@@ -499,8 +499,10 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
     return () => { unsubMat(); unsubSub(); };
   }, [studentInfo.studentId]);
 
-  const classItems = materials.filter(m => m.type === "class");
-  const hwItems    = materials.filter(m => m.type === "hw" || m.type === "answer");
+  const classItems  = materials.filter(m => m.type === "class");
+  const answerItems = materials.filter(m => m.type === "answer");
+  const hwItems     = materials.filter(m => m.type === "hw");
+  const hwSubmitItems = materials.filter(m => m.type === "hw");
 
   function getMySubmission(hwId) {
     return submissions.find(s => s.hwId === hwId);
@@ -537,7 +539,7 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
       <div className="topbar">
         <div className="topbar-left">
           <span className="topbar-logo">🎓</span>
-          <span className="topbar-name">学習塾ポータル</span>
+          <span className="topbar-name">学習塾EFFORT授業用サイト</span>
         </div>
         <div className="topbar-right">
           <span className="topbar-user">{studentInfo.name}（{studentInfo.grade}）</span>
@@ -550,6 +552,8 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
           <div className="hero-grade">{studentInfo.grade}</div>
           <div className="hero-date">{TODAY}</div>
         </div>
+
+        {/* 今日の授業 */}
         <div className="section">
           <div className="sec-head">
             <div className="sec-bar sec-bar-blue" />
@@ -562,16 +566,67 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
               : classItems.map(m => <Tile key={m.id} m={m} />)}
           </div>
         </div>
+
+        {/* 解答 */}
+        <div className="section">
+          <div className="sec-head">
+            <div className="sec-bar sec-bar-green" />
+            <span className="sec-label">✅ 解答</span>
+            <span className="sec-count">{answerItems.length}件</span>
+          </div>
+          <div className="tiles">
+            {answerItems.length === 0
+              ? <div className="empty"><div className="empty-icon">📭</div>解答はありません</div>
+              : answerItems.map(m => <Tile key={m.id} m={m} />)}
+          </div>
+        </div>
+
+        {/* 宿題 */}
         <div className="section">
           <div className="sec-head">
             <div className="sec-bar sec-bar-orange" />
-            <span className="sec-label">✏️ 宿題・解答</span>
+            <span className="sec-label">📝 宿題</span>
             <span className="sec-count">{hwItems.length}件</span>
           </div>
           <div className="tiles">
             {hwItems.length === 0
               ? <div className="empty"><div className="empty-icon">🎉</div>現在の宿題はありません</div>
               : hwItems.map(m => <Tile key={m.id} m={m} />)}
+          </div>
+        </div>
+
+        {/* 宿題提出 */}
+        <div className="section">
+          <div className="sec-head">
+            <div className="sec-bar sec-bar-purple" />
+            <span className="sec-label">📬 宿題提出</span>
+            <span className="sec-count">{hwSubmitItems.length}件</span>
+          </div>
+          <div className="tiles">
+            {hwSubmitItems.length === 0
+              ? <div className="empty"><div className="empty-icon">📭</div>提出できる宿題はありません</div>
+              : hwSubmitItems.map(m => {
+                  const mySub   = getMySubmission(m.id);
+                  const checked = mySub?.status === "checked";
+                  return (
+                    <div key={m.id}
+                      className={`tile ${checked?"tile-checked":mySub?"tile-submitted":""}`}
+                      onClick={()=>setSel(m)}>
+                      <div className="tile-icon" style={{background:"var(--purple-lt)",fontSize:26,width:56,height:56,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>📬</div>
+                      <div className="tile-body">
+                        <div className="tile-title">{m.title}</div>
+                        <div className="tile-meta">
+                          {checked   && <span className="badge badge-done">👀 確認済み</span>}
+                          {mySub && !checked && <span className="badge" style={{background:"var(--purple-lt)",color:"var(--purple)"}}>✅ 提出済</span>}
+                          {!mySub    && <span className="badge" style={{background:"var(--orange-lt)",color:"var(--orange)"}}>未提出</span>}
+                          {m.deadline && <span className="tile-deadline">⚠ 期限 {m.deadline}</span>}
+                        </div>
+                      </div>
+                      <div className="tile-arrow">›</div>
+                    </div>
+                  );
+                })
+            }
           </div>
         </div>
       </div>
@@ -915,7 +970,7 @@ function TeacherApp({ onLogout }) {
     <>
       <style>{CSS}</style>
       <div className="topbar">
-        <div className="topbar-left"><span className="topbar-logo">🎓</span><span className="topbar-name">学習塾ポータル</span></div>
+        <div className="topbar-left"><span className="topbar-logo">🎓</span><span className="topbar-name">学習塾EFFORT授業用サイト</span></div>
         <div className="topbar-right"><span className="topbar-user">講師モード</span><button className="btn-top" onClick={onLogout}>ログアウト</button></div>
       </div>
       <div className="page">
