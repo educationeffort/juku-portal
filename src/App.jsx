@@ -583,6 +583,33 @@ function StudentsPanel({ students }) {
     setLoading(false);
   }
 
+  const [pwTarget, setPwTarget] = useState(null); // パスワード変更対象
+  const [newPw, setNewPw]       = useState("");
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [pwMsg, setPwMsg]       = useState("");
+  const [pwLoading, setPwLoading] = useState(false);
+
+  async function handleChangePw() {
+    if (!newPw || newPw.length < 6) { setPwMsg("⚠ 6文字以上で入力してください"); return; }
+    setPwLoading(true); setPwMsg("");
+    try {
+      // Firebase Admin SDKがないためCloud Functions経由が理想だが、
+      // 現状はFirebase Consoleから変更するよう案内する
+      // ここでは視覚的なUXのみ提供し、実際の変更はConsoleで行う
+      setPwMsg("✅ Firebase Console → Authentication でパスワードを変更してください。\n新しいパスワード：" + newPw);
+    } catch(e) {
+      setPwMsg("⚠ エラー：" + e.message);
+    }
+    setPwLoading(false);
+  }
+
+  function genNewPw() {
+    const chars = "abcdefghjkmnpqrstuvwxyz23456789";
+    const pw = Array.from({length: 8}, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+    setNewPw(pw);
+    setShowNewPw(true);
+  }
+
   async function handleDelete() {
     await deleteDoc(doc(db, "students", delTarget.studentId));
     setDelTarget(null);
@@ -668,12 +695,70 @@ function StudentsPanel({ students }) {
                 <td>{s.grade}</td>
                 <td style={{fontSize:12,color:"var(--gray)"}}>{s.email}</td>
                 <td style={{fontFamily:"monospace",fontSize:12,color:"var(--gray)"}}>{s.studentId}</td>
-                <td><button className="btn-del" onClick={()=>setDelTarget(s)}>削除</button></td>
+                <td style={{whiteSpace:"nowrap"}}>
+                  <button className="btn-edit" onClick={()=>{setPwTarget(s);setNewPw("");setPwMsg("");setShowNewPw(false);}}>PW変更</button>
+                  <button className="btn-del" onClick={()=>setDelTarget(s)}>削除</button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {/* パスワード変更モーダル */}
+      {pwTarget && (
+        <div className="center-overlay" onClick={()=>setPwTarget(null)}>
+          <div className="center-modal" onClick={e=>e.stopPropagation()}>
+            <div className="cmodal-head">
+              <span className="cmodal-title">🔑 {pwTarget.name} のパスワード変更</span>
+              <button className="cmodal-close" onClick={()=>setPwTarget(null)}>×</button>
+            </div>
+            <div className="cmodal-body">
+              <div style={{fontSize:13,color:"var(--gray)",marginBottom:14}}>
+                メールアドレス：{pwTarget.email}
+              </div>
+              <div className="form-row">
+                <label>新しいパスワード</label>
+                <div style={{display:"flex",gap:8}}>
+                  <div style={{position:"relative",flex:1}}>
+                    <input
+                      type={showNewPw?"text":"password"}
+                      value={newPw}
+                      onChange={e=>setNewPw(e.target.value)}
+                      placeholder="6文字以上"
+                      style={{width:"100%"}}
+                    />
+                    <button type="button" onClick={()=>setShowNewPw(v=>!v)}
+                      style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:15}}>
+                      {showNewPw?"🙈":"👁"}
+                    </button>
+                  </div>
+                  <button type="button" className="btn-cancel" style={{padding:"10px 14px",fontSize:13,whiteSpace:"nowrap"}} onClick={genNewPw}>自動生成</button>
+                </div>
+              </div>
+              {newPw && (
+                <div style={{padding:"8px 12px",background:"var(--orange-lt)",borderRadius:8,fontSize:12,color:"var(--orange)",fontWeight:700,marginTop:8}}>
+                  ⚠ このパスワードをメモして生徒に渡してください
+                </div>
+              )}
+              <div style={{marginTop:14,padding:"12px 14px",background:"var(--blue-lt)",borderRadius:10,fontSize:12,color:"var(--blue)",lineHeight:1.6}}>
+                📋 変更手順：<br/>
+                1. 上で新しいパスワードを生成・メモする<br/>
+                2. <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" style={{color:"var(--blue)",fontWeight:700}}>Firebase Console</a> → Authentication を開く<br/>
+                3. {pwTarget.email} を検索してパスワードをリセット
+              </div>
+              {pwMsg && (
+                <div style={{marginTop:10,padding:"10px 14px",background:"var(--green-lt)",borderRadius:8,fontSize:13,fontWeight:700,color:"var(--green)",whiteSpace:"pre-line"}}>
+                  {pwMsg}
+                </div>
+              )}
+            </div>
+            <div className="cmodal-foot">
+              <button className="btn-cancel" onClick={()=>setPwTarget(null)}>閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 削除確認 */}
       {delTarget && (
