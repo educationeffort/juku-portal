@@ -481,7 +481,14 @@ function ContentSheet({ m, onClose }) {
 function StudentApp({ firebaseUser, studentInfo, onLogout }) {
   const [materials,    setMaterials]    = useState([]);
   const [submissions,  setSubmissions]  = useState([]);
+  const [testResults,  setTestResults]  = useState([]);
   const [sel,          setSel]          = useState(null);
+  const [testTotal,    setTestTotal]    = useState("");
+  const [testCorrect,  setTestCorrect]  = useState("");
+  const [testSending,  setTestSending]  = useState(false);
+  const [testMsg,      setTestMsg]      = useState("");
+
+  const todayStr = new Date().toISOString().slice(0,10);
 
   // Firestore リアルタイム購読
   useEffect(() => {
@@ -496,8 +503,38 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(s => s.studentId === studentInfo.studentId));
     });
-    return () => { unsubMat(); unsubSub(); };
+    const qTest = query(collection(db, "testResults"));
+    const unsubTest = onSnapshot(qTest, snap => {
+      setTestResults(snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(t => t.studentId === studentInfo.studentId));
+    });
+    return () => { unsubMat(); unsubSub(); unsubTest(); };
   }, [studentInfo.studentId]);
+
+  // 今日のテスト結果があるか
+  const todayTest = testResults.find(t => t.date === todayStr);
+
+  async function submitTest() {
+    if (!testTotal || !testCorrect) { setTestMsg("⚠ 問題数と正解数を入力してください"); return; }
+    if (parseInt(testCorrect) > parseInt(testTotal)) { setTestMsg("⚠ 正解数が問題数を超えています"); return; }
+    setTestSending(true); setTestMsg("");
+    try {
+      await setDoc(doc(db, "testResults", `${studentInfo.studentId}_${todayStr}`), {
+        studentId:   studentInfo.studentId,
+        studentName: studentInfo.name,
+        date:        todayStr,
+        total:       parseInt(testTotal),
+        correct:     parseInt(testCorrect),
+        submittedAt: serverTimestamp(),
+      });
+      setTestMsg("✅ 送信しました！");
+      setTestTotal(""); setTestCorrect("");
+    } catch(e) {
+      setTestMsg("⚠ 送信に失敗しました");
+    }
+    setTestSending(false);
+  }
 
   const classItems  = materials.filter(m => m.type === "class");
   const answerItems = materials.filter(m => m.type === "answer");
@@ -533,6 +570,16 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
     );
   }
 
+  const refTest    = useRef(null);
+  const refClass   = useRef(null);
+  const refAnswer  = useRef(null);
+  const refHw      = useRef(null);
+  const refSubmit  = useRef(null);
+
+  function scrollTo(ref) {
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <>
       <style>{CSS}</style>
@@ -546,6 +593,39 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
           <button className="btn-top" onClick={onLogout}>ログアウト</button>
         </div>
       </div>
+
+      {/* スクロールタブ（固定） */}
+      <div style={{
+        position:"sticky",top:58,zIndex:40,
+        background:"var(--white)",
+        borderBottom:"2px solid var(--border)",
+        display:"flex",overflowX:"auto",
+        boxShadow:"0 2px 8px rgba(0,0,0,.06)",
+        scrollbarWidth:"none",
+      }}>
+        {[
+          { label:"🎯 テスト",  ref: refTest,   color:"#e74c3c" },
+          { label:"📖 授業",    ref: refClass,  color:"var(--blue)" },
+          { label:"✅ 解答",    ref: refAnswer, color:"var(--green)" },
+          { label:"📝 宿題",    ref: refHw,     color:"var(--orange)" },
+          { label:"📬 提出",    ref: refSubmit, color:"var(--purple)" },
+        ].map(t => (
+          <button key={t.label} onClick={()=>scrollTo(t.ref)} style={{
+            flex:"0 0 auto",padding:"12px 18px",
+            background:"transparent",border:"none",
+            fontSize:13,fontWeight:700,color:"var(--gray)",
+            cursor:"pointer",fontFamily:"inherit",
+            borderBottom:`3px solid transparent`,
+            transition:"all .15s",whiteSpace:"nowrap",
+          }}
+          onMouseEnter={e=>{e.currentTarget.style.color=t.color;e.currentTarget.style.borderBottomColor=t.color}}
+          onMouseLeave={e=>{e.currentTarget.style.color="var(--gray)";e.currentTarget.style.borderBottomColor="transparent"}}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="page">
         <div className="hero">
           <div className="hero-name">こんにちは、{studentInfo.name} さん 👋</div>
@@ -553,8 +633,65 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
           <div className="hero-date">{TODAY}</div>
         </div>
 
+        {/* 授業前テスト */}
+        <div ref={refTest} className="section">
+          <div className="sec-head">
+            <div className="sec-bar" style={{background:"#e74c3c"}} />
+            <span className="sec-label">🎯 授業前テスト</span>
+          </div>
+          {todayTest ? (
+            <div style={{background:"var(--green-lt)",border:"1.5px solid var(--green)",borderRadius:14,padding:"18px 20px",display:"flex",alignItems:"center",gap:14}}>
+              <span style={{fontSize:32}}>✅</span>
+              <div>
+                <div style={{fontWeight:900,fontSize:15,color:"var(--green)",marginBottom:4}}>本日の結果を送信済み</div>
+                <div style={{fontSize:14,color:"var(--text)"}}>
+                  {todayTest.correct} / {todayTest.total} 問正解
+                  <span style={{marginLeft:8,fontWeight:700,color:todayTest.correct/todayTest.total>=0.8?"var(--green)":"var(--orange)"}}>
+                    （{Math.round(todayTest.correct/todayTest.total*100)}%）
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{background:"var(--white)",borderRadius:14,padding:"20px",boxShadow:"0 2px 10px rgba(0,0,0,.055)"}}>
+              <div style={{fontSize:13,color:"var(--gray)",marginBottom:14}}>今日のテストの結果を入力して送信してください</div>
+              <div style={{display:"flex",gap:12,marginBottom:12,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:120}}>
+                  <label style={{display:"block",fontSize:12,fontWeight:700,color:"var(--gray)",marginBottom:5}}>問題数</label>
+                  <input
+                    type="number" min="1" max="100"
+                    value={testTotal} onChange={e=>setTestTotal(e.target.value)}
+                    placeholder="例：10"
+                    style={{width:"100%",padding:"12px 13px",border:"1.5px solid var(--border)",borderRadius:10,fontSize:16,fontFamily:"inherit",background:"var(--bg)",outline:"none",textAlign:"center"}}
+                  />
+                </div>
+                <div style={{flex:1,minWidth:120}}>
+                  <label style={{display:"block",fontSize:12,fontWeight:700,color:"var(--gray)",marginBottom:5}}>正解数</label>
+                  <input
+                    type="number" min="0" max="100"
+                    value={testCorrect} onChange={e=>setTestCorrect(e.target.value)}
+                    placeholder="例：8"
+                    style={{width:"100%",padding:"12px 13px",border:"1.5px solid var(--border)",borderRadius:10,fontSize:16,fontFamily:"inherit",background:"var(--bg)",outline:"none",textAlign:"center"}}
+                  />
+                </div>
+              </div>
+              {testTotal && testCorrect && parseInt(testCorrect)<=parseInt(testTotal) && (
+                <div style={{textAlign:"center",fontSize:18,fontWeight:900,color:"var(--blue)",marginBottom:12}}>
+                  {Math.round(parseInt(testCorrect)/parseInt(testTotal)*100)}点
+                </div>
+              )}
+              {testMsg && <div style={{fontSize:13,fontWeight:700,color:testMsg.startsWith("✅")?"var(--green)":"var(--red)",marginBottom:8}}>{testMsg}</div>}
+              <button
+                onClick={submitTest} disabled={testSending}
+                style={{width:"100%",padding:"14px",background:"var(--blue)",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                {testSending ? "送信中..." : "📨 結果を送信する"}
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* 今日の授業 */}
-        <div className="section">
+        <div ref={refClass} className="section">
           <div className="sec-head">
             <div className="sec-bar sec-bar-blue" />
             <span className="sec-label">📖 今日の授業</span>
@@ -568,7 +705,7 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
         </div>
 
         {/* 解答 */}
-        <div className="section">
+        <div ref={refAnswer} className="section">
           <div className="sec-head">
             <div className="sec-bar sec-bar-green" />
             <span className="sec-label">✅ 解答</span>
@@ -582,7 +719,7 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
         </div>
 
         {/* 宿題 */}
-        <div className="section">
+        <div ref={refHw} className="section">
           <div className="sec-head">
             <div className="sec-bar sec-bar-orange" />
             <span className="sec-label">📝 宿題</span>
@@ -596,7 +733,7 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
         </div>
 
         {/* 宿題提出 */}
-        <div className="section">
+        <div ref={refSubmit} className="section">
           <div className="sec-head">
             <div className="sec-bar sec-bar-purple" />
             <span className="sec-label">📬 宿題提出</span>
@@ -635,6 +772,110 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
           onClose={()=>setSel(null)} onSubmit={()=>setSel(null)} />
       )}
       {sel && sel.type !== "hw" && <ContentSheet m={sel} onClose={()=>setSel(null)} />}
+    </>
+  );
+}
+
+// ─────────────────────────────────────────
+// RECORDS TAB（講師用・成績一覧）
+// ─────────────────────────────────────────
+function RecordsTab({ students, testResults, submissions }) {
+  const [filterStudent, setFilterStudent] = useState("all");
+
+  // 過去30日の日付リストを生成
+  const dates = Array.from({length:30}, (_,i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    return d.toISOString().slice(0,10);
+  });
+
+  const filteredStudents = filterStudent === "all"
+    ? students
+    : students.filter(s => s.studentId === filterStudent);
+
+  return (
+    <>
+      {/* 生徒フィルター */}
+      <div className="sub-filter" style={{marginBottom:16}}>
+        <button className={`sub-filter-btn ${filterStudent==="all"?"active":""}`} onClick={()=>setFilterStudent("all")}>全員</button>
+        {students.map(s => (
+          <button key={s.id} className={`sub-filter-btn ${filterStudent===s.studentId?"active":""}`}
+            onClick={()=>setFilterStudent(s.studentId)}>
+            {s.name}
+          </button>
+        ))}
+      </div>
+
+      {filteredStudents.map(student => {
+        const studentTests = testResults.filter(t => t.studentId === student.studentId);
+        const studentSubs  = submissions.filter(s => s.studentId === student.studentId);
+
+        return (
+          <div key={student.id} style={{background:"var(--white)",borderRadius:14,marginBottom:20,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,.055)"}}>
+            {/* 生徒ヘッダー */}
+            <div style={{background:"var(--navy)",color:"#fff",padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:32,height:32,borderRadius:"50%",background:"rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13}}>
+                {student.name[0]}
+              </div>
+              <div>
+                <div style={{fontWeight:900,fontSize:14}}>{student.name}</div>
+                <div style={{fontSize:11,opacity:.7}}>{student.grade}</div>
+              </div>
+            </div>
+
+            {/* 日付ごとの一覧 */}
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:400}}>
+                <thead>
+                  <tr style={{background:"var(--bg)"}}>
+                    <th style={{padding:"9px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"var(--gray)",whiteSpace:"nowrap"}}>日付</th>
+                    <th style={{padding:"9px 14px",textAlign:"center",fontSize:11,fontWeight:700,color:"var(--gray)",whiteSpace:"nowrap"}}>テスト結果</th>
+                    <th style={{padding:"9px 14px",textAlign:"center",fontSize:11,fontWeight:700,color:"var(--gray)",whiteSpace:"nowrap"}}>宿題提出</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dates.map(date => {
+                    const test = studentTests.find(t => t.date === date);
+                    const sub  = studentSubs.find(s => {
+                      const subDate = s.submittedAt?.toDate?.()?.toISOString?.()?.slice(0,10);
+                      return subDate === date;
+                    });
+                    if (!test && !sub) return null;
+                    return (
+                      <tr key={date} style={{borderTop:"1px solid var(--border)"}}>
+                        <td style={{padding:"11px 14px",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>
+                          {date.replace(/(\d{4})-(\d{2})-(\d{2})/,"$2/$3")}
+                        </td>
+                        <td style={{padding:"11px 14px",textAlign:"center"}}>
+                          {test ? (
+                            <span style={{
+                              fontWeight:700,fontSize:13,
+                              color: test.correct/test.total >= 0.8 ? "var(--green)" : test.correct/test.total >= 0.6 ? "var(--orange)" : "var(--red)"
+                            }}>
+                              {test.correct}/{test.total}問
+                              （{Math.round(test.correct/test.total*100)}%）
+                            </span>
+                          ) : <span style={{color:"var(--border)",fontSize:12}}>—</span>}
+                        </td>
+                        <td style={{padding:"11px 14px",textAlign:"center"}}>
+                          {sub ? (
+                            <span style={{fontSize:12,fontWeight:700,color:"var(--green)"}}>
+                              ✅ {sub.status==="checked" ? "確認済" : "提出済"}
+                            </span>
+                          ) : <span style={{color:"var(--border)",fontSize:12}}>—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {studentTests.length===0 && studentSubs.length===0 && (
+                    <tr><td colSpan={3} style={{textAlign:"center",padding:"20px",color:"var(--gray)",fontSize:13}}>記録がありません</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -892,14 +1133,16 @@ function TeacherApp({ onLogout }) {
   const [students,    setStudentsState] = useState([]);
   const [materials,   setMaterials]   = useState([]);
   const [submissions, setSubmissions] = useState([]);
+  const [testResults, setTestResults] = useState([]);
   const [form,        setForm]        = useState({ title:"", sub:"PDF", url:"", deadline:"", targets:[] });
   const [done,        setDone]        = useState(false);
 
   useEffect(() => {
-    const unsubS = onSnapshot(collection(db, "students"),  snap => setStudentsState(snap.docs.map(d=>({id:d.id,...d.data()}))));
-    const unsubM = onSnapshot(query(collection(db,"materials"),orderBy("date","desc")), snap => setMaterials(snap.docs.map(d=>({id:d.id,...d.data()}))));
+    const unsubS   = onSnapshot(collection(db, "students"),  snap => setStudentsState(snap.docs.map(d=>({id:d.id,...d.data()}))));
+    const unsubM   = onSnapshot(query(collection(db,"materials"),orderBy("date","desc")), snap => setMaterials(snap.docs.map(d=>({id:d.id,...d.data()}))));
     const unsubSub = onSnapshot(query(collection(db,"submissions"),orderBy("submittedAt","desc")), snap => setSubmissions(snap.docs.map(d=>({id:d.id,...d.data()}))));
-    return () => { unsubS(); unsubM(); unsubSub(); };
+    const unsubTest = onSnapshot(query(collection(db,"testResults"),orderBy("date","desc")), snap => setTestResults(snap.docs.map(d=>({id:d.id,...d.data()}))));
+    return () => { unsubS(); unsubM(); unsubSub(); unsubTest(); };
   }, []);
 
   // ── 教材配信 ──
@@ -955,11 +1198,12 @@ function TeacherApp({ onLogout }) {
   const uncheckedCount = submissions.filter(s=>s.status!=="checked").length;
 
   const TABS = [
-    {id:"home",label:"🏠 ホーム"},
-    {id:"upload",label:"📤 配信"},
-    {id:"list",label:"📋 一覧"},
-    {id:"submissions",label:"📬 提出物",badge:uncheckedCount},
-    {id:"students",label:"👥 生徒"},
+    {id:"home",       label:"🏠 ホーム"},
+    {id:"upload",     label:"📤 配信"},
+    {id:"list",       label:"📋 一覧"},
+    {id:"submissions",label:"📬 提出物", badge:uncheckedCount},
+    {id:"records",    label:"📊 成績"},
+    {id:"students",   label:"👥 生徒"},
   ];
 
   function toggleTarget(id) {
@@ -1087,6 +1331,10 @@ function TeacherApp({ onLogout }) {
               );
             })}
           </>
+        )}
+
+        {tab==="records" && (
+          <RecordsTab students={students} testResults={testResults} submissions={submissions} />
         )}
 
         {/* STUDENTS */}
