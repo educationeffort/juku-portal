@@ -1308,6 +1308,34 @@ function StudentsPanel({ students, groups }) {
     setLoading(false);
   }
 
+  const [editTarget, setEditTarget] = useState(null); // 編集対象
+  const [editForm, setEditForm]     = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editMsg, setEditMsg]       = useState("");
+
+  function openEdit(s) {
+    setEditTarget(s);
+    setEditForm({ name: s.name, grade: s.grade, groupId: s.groupId||"" });
+    setEditMsg("");
+  }
+
+  async function handleEditSave() {
+    if (!editForm.name.trim()) { setEditMsg("⚠ 名前を入力してください"); return; }
+    setEditSaving(true); setEditMsg("");
+    try {
+      await updateDoc(doc(db, "students", editTarget.studentId), {
+        name:    editForm.name.trim(),
+        grade:   editForm.grade,
+        groupId: editForm.groupId || "",
+      });
+      setEditMsg("✅ 保存しました");
+      setTimeout(() => setEditTarget(null), 800);
+    } catch(e) {
+      setEditMsg("⚠ エラー：" + e.message);
+    }
+    setEditSaving(false);
+  }
+
   const [pwTarget, setPwTarget] = useState(null); // パスワード変更対象
   const [newPw, setNewPw]       = useState("");
   const [showNewPw, setShowNewPw] = useState(false);
@@ -1428,6 +1456,7 @@ function StudentsPanel({ students, groups }) {
                 <td style={{fontSize:12,color:"var(--gray)"}}>{s.email}</td>
                 <td style={{fontFamily:"monospace",fontSize:12,color:"var(--gray)"}}>{s.studentId}</td>
                 <td style={{whiteSpace:"nowrap"}}>
+                  <button className="btn-edit" style={{marginRight:4}} onClick={()=>openEdit(s)}>編集</button>
                   <button className="btn-edit" onClick={()=>{setPwTarget(s);setNewPw("");setPwMsg("");setShowNewPw(false);}}>PW変更</button>
                   <button className="btn-del" onClick={()=>setDelTarget(s)}>削除</button>
                 </td>
@@ -1436,6 +1465,56 @@ function StudentsPanel({ students, groups }) {
           </tbody>
         </table>
       </div>
+
+      {/* 編集モーダル */}
+      {editTarget && (
+        <div className="center-overlay" onClick={()=>setEditTarget(null)}>
+          <div className="center-modal" onClick={e=>e.stopPropagation()}>
+            <div className="cmodal-head">
+              <span className="cmodal-title">✏️ {editTarget.name} の情報を編集</span>
+              <button className="cmodal-close" onClick={()=>setEditTarget(null)}>×</button>
+            </div>
+            <div className="cmodal-body">
+              <div className="form-row">
+                <label>名前</label>
+                <input value={editForm.name} onChange={e=>setEditForm(f=>({...f,name:e.target.value}))} />
+              </div>
+              <div className="form-row">
+                <label>学年</label>
+                <select value={editForm.grade} onChange={e=>setEditForm(f=>({...f,grade:e.target.value}))}>
+                  {GRADES.map(g=><option key={g}>{g}</option>)}
+                </select>
+              </div>
+              <div className="form-row">
+                <label>グループ（学校・学年）</label>
+                <select value={editForm.groupId} onChange={e=>setEditForm(f=>({...f,groupId:e.target.value}))}>
+                  <option value="">グループなし</option>
+                  {(groups||[]).map(g=>(
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              </div>
+              {editForm.groupId==="" && (
+                <div style={{padding:"10px 14px",background:"var(--orange-lt)",borderRadius:10,fontSize:12,color:"var(--orange)",fontWeight:700}}>
+                  ⚠ グループ未設定の場合、授業予定がグループ別に表示されません。<br/>
+                  先に「🏫 グループ」タブでグループを作成してください。
+                </div>
+              )}
+              {editMsg && (
+                <div style={{marginTop:10,padding:"10px 14px",background:editMsg.startsWith("✅")?"var(--green-lt)":"var(--red-lt)",borderRadius:8,fontSize:13,fontWeight:700,color:editMsg.startsWith("✅")?"var(--green)":"var(--red)"}}>
+                  {editMsg}
+                </div>
+              )}
+            </div>
+            <div className="cmodal-foot">
+              <button className="btn-cancel" onClick={()=>setEditTarget(null)}>キャンセル</button>
+              <button className="btn-save" onClick={handleEditSave} disabled={editSaving}>
+                {editSaving ? "保存中..." : "💾 保存する"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* パスワード変更モーダル */}
       {pwTarget && (
