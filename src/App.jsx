@@ -567,6 +567,7 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
   const [testSending,  setTestSending]  = useState(false);
   const [testMsg,      setTestMsg]      = useState("");
   const [schedule,     setSchedule]     = useState([]);
+  const [studentGroups,setStudentGroups] = useState([]);
 
   const todayStr = new Date().toISOString().slice(0,10);
 
@@ -589,10 +590,13 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(t => t.studentId === studentInfo.studentId));
     });
-    const unsubSched = onSnapshot(query(collection(db,"schedule"),orderBy("date","asc")), snap => {
+    const unsubSched  = onSnapshot(query(collection(db,"schedule"),orderBy("date","asc")), snap => {
       setSchedule(snap.docs.map(d=>({id:d.id,...d.data()})));
     });
-    return () => { unsubMat(); unsubSub(); unsubTest(); unsubSched(); };
+    const unsubGroups = onSnapshot(collection(db,"groups"), snap => {
+      setStudentGroups(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    return () => { unsubMat(); unsubSub(); unsubTest(); unsubSched(); unsubGroups(); };
   }, [studentInfo.studentId]);
 
   // 今日のテスト結果があるか
@@ -719,7 +723,11 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
         {/* ヒーロー */}
         <div className="hero" style={{marginBottom:20}}>
           <div className="hero-name">こんにちは、{studentInfo.name} さん 👋</div>
-          <div className="hero-grade">{studentInfo.grade}</div>
+          <div className="hero-grade">{studentInfo.grade}
+            {studentInfo.groupId && studentGroups.find(g=>g.id===studentInfo.groupId) && (
+              <span style={{marginLeft:8,fontSize:12,opacity:.8}}>🏫 {studentGroups.find(g=>g.id===studentInfo.groupId)?.name}</span>
+            )}
+          </div>
           <div className="hero-date">{TODAY}</div>
         </div>
 
@@ -891,10 +899,10 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
 // ─────────────────────────────────────────
 // SCHEDULE TAB（授業予定・講師用）
 // ─────────────────────────────────────────
-function ScheduleTab({ students }) {
+function ScheduleTab({ students, groups }) {
   const DAY_NAMES = ["日","月","火","水","木","金","土"];
   const [scheduleItems, setScheduleItems] = useState([]);
-  const [form, setForm] = useState({ date:"", subject:"英語", content:"" });
+  const [form, setForm] = useState({ date:"", subject:"英語", content:"", groupId:"all" });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -916,7 +924,7 @@ function ScheduleTab({ students }) {
     setSaving(true); setMsg("");
     try {
       await addDoc(collection(db,"schedule"), {
-        date: form.date, subject: form.subject, content: form.content,
+        date: form.date, subject: form.subject, content: form.content, groupId: form.groupId||"all",
         createdAt: serverTimestamp(),
       });
       setMsg("✅ 追加しました");
@@ -945,6 +953,13 @@ function ScheduleTab({ students }) {
               {SUBJECTS.map(s=><option key={s}>{s}</option>)}
             </select>
           </div>
+        </div>
+        <div className="form-row">
+          <label>対象グループ</label>
+          <select value={form.groupId} onChange={e=>setForm(f=>({...f,groupId:e.target.value}))}>
+            <option value="all">全グループ共通</option>
+            {(groups||[]).map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
         </div>
         <div className="form-row">
           <label>授業内容</label>
@@ -1098,13 +1113,158 @@ function RecordsTab({ students, testResults, submissions }) {
   );
 }
 
+
+// ─────────────────────────────────────────
+// GROUPS TAB（グループ管理）
+// ─────────────────────────────────────────
+function GroupsTab({ groups, students }) {
+  const GRADES = ["小学1年","小学2年","小学3年","小学4年","小学5年","小学6年",
+                  "中学1年","中学2年","中学3年","高校1年","高校2年","高校3年","その他"];
+  const [schoolName, setSchoolName] = useState("");
+  const [grade, setGrade]           = useState("中学1年");
+  const [saving, setSaving]         = useState(false);
+  const [msg, setMsg]               = useState("");
+  const [delTarget, setDelTarget]   = useState(null);
+
+  async function handleAdd() {
+    if (!schoolName.trim()) { setMsg("⚠ 学校名を入力してください"); return; }
+    const name = `${schoolName.trim()} ${grade}`;
+    if (groups.find(g=>g.name===name)) { setMsg("⚠ 同じグループがすでにあります"); return; }
+    setSaving(true); setMsg("");
+    try {
+      await addDoc(collection(db,"groups"), {
+        name, schoolName: schoolName.trim(), grade,
+        createdAt: serverTimestamp(),
+      });
+      setMsg("✅ 作成しました");
+      setSchoolName("");
+    } catch(e) { setMsg("⚠ エラー："+e.message); }
+    setSaving(false);
+  }
+
+  async function handleDelete(g) {
+    // グループに属する生徒のgroupIdをクリア
+    const members = students.filter(s=>s.groupId===g.id);
+    for (const s of members) {
+      await updateDoc(doc(db,"students",s.studentId), {groupId:""});
+    }
+    await deleteDoc(doc(db,"groups",g.id));
+    setDelTarget(null);
+  }
+
+  // グループ別に生徒を表示
+  const grouped = groups.map(g=>({
+    ...g,
+    members: students.filter(s=>s.groupId===g.id)
+  }));
+  const ungrouped = students.filter(s=>!s.groupId||!groups.find(g=>g.id===s.groupId));
+
+  return (
+    <>
+      {/* 作成フォーム */}
+      <div className="form-card" style={{marginBottom:20}}>
+        <h2>🏫 グループを作成</h2>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div className="form-row" style={{margin:0}}>
+            <label>学校名</label>
+            <input value={schoolName} onChange={e=>setSchoolName(e.target.value)}
+              placeholder="例：〇〇中学校" onKeyDown={e=>e.key==="Enter"&&handleAdd()} />
+          </div>
+          <div className="form-row" style={{margin:0}}>
+            <label>学年</label>
+            <select value={grade} onChange={e=>setGrade(e.target.value)}>
+              {GRADES.map(g=><option key={g}>{g}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{marginTop:8,padding:"8px 12px",background:"var(--bg)",borderRadius:8,fontSize:13,color:"var(--gray)"}}>
+          グループ名：<strong>{schoolName||"学校名"}　{grade}</strong>
+        </div>
+        <button className="btn-submit" onClick={handleAdd} disabled={saving} style={{marginTop:12}}>
+          {saving?"作成中...":"＋ グループを作成"}
+        </button>
+        {msg && <span style={{marginLeft:12,fontSize:13,fontWeight:700,color:msg.startsWith("✅")?"var(--green)":"var(--red)"}}>{msg}</span>}
+      </div>
+
+      {/* グループ一覧 */}
+      {grouped.map(g=>(
+        <div key={g.id} style={{background:"#fff",borderRadius:14,marginBottom:16,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,.055)"}}>
+          <div style={{background:"var(--navy)",color:"#fff",padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:18}}>🏫</span>
+            <span style={{fontWeight:900,fontSize:15,flex:1}}>{g.name}</span>
+            <span style={{fontSize:12,opacity:.7}}>{g.members.length}名</span>
+            <button className="btn-del" style={{color:"#faa",borderColor:"#faa"}}
+              onClick={()=>setDelTarget(g)}>削除</button>
+          </div>
+          {g.members.length===0
+            ? <div style={{padding:"16px",fontSize:13,color:"var(--gray)",fontStyle:"italic"}}>生徒が登録されていません</div>
+            : <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr style={{background:"var(--bg)"}}>
+                  <th style={{padding:"8px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"var(--gray)"}}>名前</th>
+                  <th style={{padding:"8px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"var(--gray)"}}>学年</th>
+                  <th style={{padding:"8px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"var(--gray)"}}>ID</th>
+                </tr></thead>
+                <tbody>
+                  {g.members.map(s=>(
+                    <tr key={s.id} style={{borderTop:"1px solid var(--border)"}}>
+                      <td style={{padding:"10px 14px",fontWeight:700,fontSize:13}}>{s.name}</td>
+                      <td style={{padding:"10px 14px",fontSize:13,color:"var(--gray)"}}>{s.grade}</td>
+                      <td style={{padding:"10px 14px",fontSize:12,fontFamily:"monospace",color:"var(--gray)"}}>{s.studentId}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+          }
+        </div>
+      ))}
+
+      {/* グループなしの生徒 */}
+      {ungrouped.length>0 && (
+        <div style={{background:"#fff",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,.055)"}}>
+          <div style={{background:"var(--gray)",color:"#fff",padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:18}}>👤</span>
+            <span style={{fontWeight:900,fontSize:15,flex:1}}>グループ未設定</span>
+            <span style={{fontSize:12,opacity:.7}}>{ungrouped.length}名</span>
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <tbody>
+              {ungrouped.map(s=>(
+                <tr key={s.id} style={{borderTop:"1px solid var(--border)"}}>
+                  <td style={{padding:"10px 14px",fontWeight:700,fontSize:13}}>{s.name}</td>
+                  <td style={{padding:"10px 14px",fontSize:13,color:"var(--gray)"}}>{s.grade}</td>
+                  <td style={{padding:"10px 14px",fontSize:12,fontFamily:"monospace",color:"var(--gray)"}}>{s.studentId}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 削除確認 */}
+      {delTarget && (
+        <div className="del-overlay" onClick={()=>setDelTarget(null)}>
+          <div className="del-modal" onClick={e=>e.stopPropagation()}>
+            <div className="del-icon-big">🏫</div>
+            <div className="del-title">「{delTarget.name}」を削除しますか？</div>
+            <div className="del-sub">グループは削除されますが、生徒データは残ります。<br/>生徒のグループ設定がリセットされます。</div>
+            <div className="del-btns">
+              <button className="btn-cancel" onClick={()=>setDelTarget(null)}>キャンセル</button>
+              <button className="btn-del-confirm" onClick={()=>handleDelete(delTarget)}>削除する</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─────────────────────────────────────────
 // STUDENTS PANEL（講師用）
 // ─────────────────────────────────────────
-function StudentsPanel({ students }) {
+function StudentsPanel({ students, groups }) {
   const GRADES = ["小学1年","小学2年","小学3年","小学4年","小学5年","小学6年",
                   "中学1年","中学2年","中学3年","高校1年","高校2年","高校3年","その他"];
-  const BLANK = { name:"", grade:"中学1年", studentId:"", email:"", password:"" };
+  const BLANK = { name:"", grade:"中学1年", studentId:"", email:"", password:"", groupId:"" };
   const [form, setForm]       = useState(BLANK);
   const [adding, setAdding]   = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1202,6 +1362,13 @@ function StudentsPanel({ students }) {
             <label>学年</label>
             <select value={form.grade} onChange={e=>setForm(f=>({...f,grade:e.target.value}))}>
               {GRADES.map(g=><option key={g}>{g}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>グループ（任意）</label>
+            <select value={form.groupId} onChange={e=>setForm(f=>({...f,groupId:e.target.value}))}>
+              <option value="">グループなし</option>
+              {(groups||[]).map(g=><option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
           </div>
           <div className="form-row">
@@ -1353,6 +1520,7 @@ function TeacherApp({ onLogout }) {
   const [submissions, setSubmissions] = useState([]);
   const [testResults, setTestResults] = useState([]);
   const [schedule,    setSchedule]    = useState([]);
+  const [groups,      setGroups]      = useState([]);
   const [form,        setForm]        = useState({ title:"", sub:"PDF", subject:"英語", url:"", deadline:"", targets:[] });
   const [uploadFile,  setUploadFile]  = useState(null);
   const [uploading,   setUploading]   = useState(false);
@@ -1363,8 +1531,9 @@ function TeacherApp({ onLogout }) {
     const unsubM   = onSnapshot(query(collection(db,"materials"),orderBy("date","desc")), snap => setMaterials(snap.docs.map(d=>({id:d.id,...d.data()}))));
     const unsubSub = onSnapshot(query(collection(db,"submissions"),orderBy("submittedAt","desc")), snap => setSubmissions(snap.docs.map(d=>({id:d.id,...d.data()}))));
     const unsubTest  = onSnapshot(query(collection(db,"testResults"),orderBy("date","desc")), snap => setTestResults(snap.docs.map(d=>({id:d.id,...d.data()}))));
-    const unsubSched = onSnapshot(query(collection(db,"schedule"),orderBy("date","asc")), snap => setSchedule(snap.docs.map(d=>({id:d.id,...d.data()}))));
-    return () => { unsubS(); unsubM(); unsubSub(); unsubTest(); unsubSched(); };
+    const unsubSched  = onSnapshot(query(collection(db,"schedule"),orderBy("date","asc")), snap => setSchedule(snap.docs.map(d=>({id:d.id,...d.data()}))));
+    const unsubGroups = onSnapshot(collection(db,"groups"), snap => setGroups(snap.docs.map(d=>({id:d.id,...d.data()}))));
+    return () => { unsubS(); unsubM(); unsubSub(); unsubTest(); unsubSched(); unsubGroups(); };
   }, []);
 
   // ── 教材配信 ──
@@ -1443,6 +1612,7 @@ function TeacherApp({ onLogout }) {
     {id:"submissions",label:"📬 提出物", badge:uncheckedCount},
     {id:"records",    label:"📊 成績"},
     {id:"students",   label:"👥 生徒"},
+    {id:"groups",     label:"🏫 グループ"},
   ];
 
   function toggleTarget(id) {
@@ -1524,9 +1694,43 @@ function TeacherApp({ onLogout }) {
             </div>
             {form.sub==="宿題" && <div className="form-row"><label>提出期限</label><input type="date" value={form.deadline} onChange={e=>setForm(f=>({...f,deadline:e.target.value}))} /></div>}
             <div className="form-row">
-              <label>対象生徒</label>
+              <label>グループで一括選択（任意）</label>
               <div className="chk-group">
-                {students.map(s=>(
+                {groups.map(g=>{
+                  const memberIds = students.filter(s=>s.groupId===g.id).map(s=>s.studentId);
+                  const allSelected = memberIds.length>0 && memberIds.every(id=>form.targets.includes(id));
+                  return (
+                    <label key={g.id} className={`chk-label ${allSelected?"checked":""}`}>
+                      <input type="checkbox" checked={allSelected}
+                        onChange={()=>{
+                          if(allSelected) setForm(f=>({...f,targets:f.targets.filter(id=>!memberIds.includes(id))}));
+                          else setForm(f=>({...f,targets:[...new Set([...f.targets,...memberIds])]}));
+                        }}/>
+                      🏫 {g.name}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="form-row">
+              <label>対象生徒（個別選択）</label>
+              <div className="chk-group">
+                {groups.length>0 ? groups.map(g=>{
+                  const members = students.filter(s=>s.groupId===g.id);
+                  if(members.length===0) return null;
+                  return (
+                    <div key={g.id} style={{width:"100%",marginBottom:8}}>
+                      <div style={{fontSize:11,fontWeight:700,color:"var(--gray)",marginBottom:4,letterSpacing:.5}}>🏫 {g.name}</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                        {members.map(s=>(
+                          <label key={s.id} className={`chk-label ${form.targets.includes(s.studentId)?"checked":""}`}>
+                            <input type="checkbox" checked={form.targets.includes(s.studentId)} onChange={()=>toggleTarget(s.studentId)}/>{s.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }) : students.map(s=>(
                   <label key={s.id} className={`chk-label ${form.targets.includes(s.studentId)?"checked":""}`}>
                     <input type="checkbox" checked={form.targets.includes(s.studentId)} onChange={()=>toggleTarget(s.studentId)}/>{s.name}
                   </label>
@@ -1594,7 +1798,7 @@ function TeacherApp({ onLogout }) {
         )}
 
         {tab==="schedule" && (
-          <ScheduleTab students={students} />
+          <ScheduleTab students={students} groups={groups} />
         )}
 
         {tab==="records" && (
@@ -1603,7 +1807,11 @@ function TeacherApp({ onLogout }) {
 
         {/* STUDENTS */}
         {tab==="students" && (
-          <StudentsPanel students={students} />
+          <StudentsPanel students={students} groups={groups} />
+        )}
+
+        {tab==="groups" && (
+          <GroupsTab groups={groups} students={students} />
         )}
       </div>
     </>
