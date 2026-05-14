@@ -741,7 +741,11 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
           </div>
           <div className="week-wrap">
             {weekDates.map(({date,dayName,dayNum,isToday})=>{
-              const items = schedule.filter(s=>s.date===date);
+              const myGroupId = studentInfo.groupId || "";
+              const items = schedule.filter(s =>
+                s.date === date &&
+                (s.groupId === "all" || !s.groupId || s.groupId === myGroupId)
+              );
               return (
                 <div key={date} className={`day-card ${isToday?"today":""}`}>
                   <div className="day-label">
