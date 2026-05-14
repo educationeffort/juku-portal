@@ -21,6 +21,8 @@ import { auth, db, storage } from "./firebase";
 const TODAY = new Date().toLocaleDateString("ja-JP", {
   year:"numeric", month:"long", day:"numeric", weekday:"long"
 });
+const SUBJECTS = ["英語","数学","国語","理科","社会","その他"];
+const SUBJECT_COLORS = { 英語:"#2e86de", 数学:"#e74c3c", 国語:"#8e44ad", 理科:"#27ae60", 社会:"#e67e22", その他:"#7f8c8d" };
 const SUB_TO_TYPE = { PDF:"class", スライド:"class", 動画:"class", 宿題:"hw", 解答:"answer", 授業前テスト:"pretest" };
 const SUB_TO_ICON = { PDF:"📄", スライド:"📊", 動画:"🎬", 宿題:"📝", 解答:"✅", 授業前テスト:"🎯" };
 
@@ -196,6 +198,63 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 .del-btns .btn-cancel{flex:1}
 .btn-del-confirm{flex:1;padding:11px;background:var(--red);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
 .loading{min-height:100vh;display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--gray)}
+
+/* 教科バッジ */
+.subj-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:900;border:1.5px solid transparent}
+
+/* 新生徒画面 */
+.s-section{margin-bottom:24px}
+.s-section-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:14px 16px;border-radius:14px;cursor:pointer;transition:opacity .15s}
+.s-section-head:hover{opacity:.85}
+.s-section-icon{font-size:24px;flex-shrink:0}
+.s-section-title{font-size:17px;font-weight:900;color:#fff;flex:1}
+.s-section-count{font-size:12px;font-weight:700;background:rgba(255,255,255,.25);color:#fff;padding:2px 10px;border-radius:12px}
+.s-section-arrow{font-size:18px;color:rgba(255,255,255,.7);transition:transform .2s}
+.s-section-arrow.open{transform:rotate(90deg)}
+
+/* カード */
+.s-card{background:#fff;border-radius:14px;padding:16px 18px;margin-bottom:10px;box-shadow:0 2px 10px rgba(0,0,0,.06);cursor:pointer;transition:all .18s;border:2px solid transparent;display:flex;align-items:center;gap:14px}
+.s-card:hover{box-shadow:0 4px 20px rgba(0,0,0,.10);border-color:var(--border)}
+.s-card:active{transform:scale(.982)}
+.s-card-icon{width:52px;height:52px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+.s-card-body{flex:1;min-width:0}
+.s-card-title{font-size:15px;font-weight:700;line-height:1.4;margin-bottom:6px}
+.s-card-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.s-card-arrow{font-size:20px;color:#c8d0da;flex-shrink:0}
+.s-card.submitted{border-color:var(--green)!important;background:linear-gradient(to right,#fff,#f0fdf4)}
+.s-card.checked{border-color:var(--blue)!important;background:linear-gradient(to right,#fff,#f0f6ff)}
+
+/* テストカード */
+.test-card{background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.06);margin-bottom:10px}
+.test-input-row{display:flex;gap:12px;margin-bottom:14px}
+.test-input-box{flex:1;text-align:center}
+.test-input-box label{display:block;font-size:12px;font-weight:700;color:var(--gray);margin-bottom:6px}
+.test-input-box input{width:100%;padding:14px;border:2px solid var(--border);border-radius:12px;font-size:22px;font-weight:900;text-align:center;font-family:inherit;background:var(--bg);outline:none;transition:border-color .18s}
+.test-input-box input:focus{border-color:var(--blue);background:#fff}
+.test-score-preview{text-align:center;font-size:28px;font-weight:900;margin-bottom:12px;color:var(--blue)}
+.test-submit-btn{width:100%;padding:15px;background:var(--blue);color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:900;cursor:pointer;font-family:inherit;transition:background .15s}
+.test-submit-btn:hover{background:#0055bb}
+.test-submit-btn:disabled{opacity:.5;cursor:not-allowed}
+.test-done-card{background:var(--green-lt);border:2px solid var(--green);border-radius:14px;padding:20px;display:flex;align-items:center;gap:16px}
+.test-done-icon{font-size:36px;flex-shrink:0}
+.test-done-title{font-size:15px;font-weight:900;color:var(--green);margin-bottom:4px}
+.test-done-score{font-size:14px;color:var(--text)}
+
+/* 週間予定 */
+.week-wrap{display:flex;flex-direction:column;gap:8px}
+.day-card{background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,.055);display:flex;align-items:flex-start;gap:14px}
+.day-card.today{border:2px solid var(--blue);background:var(--blue-lt)}
+.day-label{flex-shrink:0;text-align:center;min-width:44px}
+.day-name{font-size:12px;font-weight:900;color:var(--gray)}
+.day-date{font-size:18px;font-weight:900;color:var(--navy)}
+.day-card.today .day-name{color:var(--blue)}
+.day-card.today .day-date{color:var(--blue)}
+.day-content{flex:1;min-width:0}
+.day-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)}
+.day-item:last-child{border-bottom:none}
+.day-subject{font-size:12px;font-weight:900;padding:2px 8px;border-radius:10px;flex-shrink:0}
+.day-text{font-size:14px;color:var(--text);line-height:1.4}
+.day-empty{font-size:13px;color:var(--gray);font-style:italic}
 @media(max-width:520px){
   .topbar{padding:0 12px}.topbar-user{max-width:90px}
   .page{padding:14px 10px 60px}
@@ -507,6 +566,7 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
   const [testCorrect,  setTestCorrect]  = useState("");
   const [testSending,  setTestSending]  = useState(false);
   const [testMsg,      setTestMsg]      = useState("");
+  const [schedule,     setSchedule]     = useState([]);
 
   const todayStr = new Date().toISOString().slice(0,10);
 
@@ -529,7 +589,10 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(t => t.studentId === studentInfo.studentId));
     });
-    return () => { unsubMat(); unsubSub(); unsubTest(); };
+    const unsubSched = onSnapshot(query(collection(db,"schedule"),orderBy("date","asc")), snap => {
+      setSchedule(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    return () => { unsubMat(); unsubSub(); unsubTest(); unsubSched(); };
   }, [studentInfo.studentId]);
 
   // 今日のテスト結果があるか
@@ -601,6 +664,43 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // セクション開閉状態
+  const [openSections, setOpenSections] = useState({test:true, class:true, hw:true});
+  function toggleSection(key) { setOpenSections(s=>({...s,[key]:!s[key]})); }
+
+  // 教科バッジ
+  function SubjBadge({ subject }) {
+    if (!subject) return null;
+    const color = SUBJECT_COLORS[subject] || "#7f8c8d";
+    return <span className="subj-badge" style={{background:color+"22",color,borderColor:color+"44"}}>{subject}</span>;
+  }
+
+  // 汎用カード
+  function SCard({ m, extraBadge, iconBg, iconChar }) {
+    return (
+      <div className="s-card" onClick={()=>setSel(m)}>
+        <div className="s-card-icon" style={{background:iconBg||"var(--blue-lt)"}}>{iconChar||m.icon}</div>
+        <div className="s-card-body">
+          <div className="s-card-title">{m.title}</div>
+          <div className="s-card-meta">
+            <SubjBadge subject={m.subject} />
+            {extraBadge}
+            <span className="tile-date">{m.date}</span>
+            {m.deadline && <span className="tile-deadline">⚠ 期限 {m.deadline}</span>}
+          </div>
+        </div>
+        <div className="s-card-arrow">›</div>
+      </div>
+    );
+  }
+
+  // 週間予定（今日から7日）
+  const DAY_NAMES = ["日","月","火","水","木","金","土"];
+  const weekDates = Array.from({length:7},(_,i)=>{
+    const d = new Date(); d.setDate(d.getDate()+i);
+    return { date: d.toISOString().slice(0,10), dayName: DAY_NAMES[d.getDay()], dayNum: d.getDate(), isToday: i===0 };
+  });
+
   return (
     <>
       <style>{CSS}</style>
@@ -615,205 +715,281 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
         </div>
       </div>
 
-      {/* スクロールタブ（固定） */}
-      <div style={{
-        position:"sticky",top:58,zIndex:40,
-        background:"var(--white)",
-        borderBottom:"2px solid var(--border)",
-        display:"flex",overflowX:"auto",
-        boxShadow:"0 2px 8px rgba(0,0,0,.06)",
-        scrollbarWidth:"none",
-      }}>
-        {[
-          { label:"🎯 テスト",  ref: refTest,   color:"#e74c3c" },
-          { label:"📖 授業",    ref: refClass,  color:"var(--blue)" },
-          { label:"✅ 解答",    ref: refAnswer, color:"var(--green)" },
-          { label:"📝 宿題",    ref: refHw,     color:"var(--orange)" },
-          { label:"📬 提出",    ref: refSubmit, color:"var(--purple)" },
-        ].map(t => (
-          <button key={t.label} onClick={()=>scrollTo(t.ref)} style={{
-            flex:"0 0 auto",padding:"12px 18px",
-            background:"transparent",border:"none",
-            fontSize:13,fontWeight:700,color:"var(--gray)",
-            cursor:"pointer",fontFamily:"inherit",
-            borderBottom:`3px solid transparent`,
-            transition:"all .15s",whiteSpace:"nowrap",
-          }}
-          onMouseEnter={e=>{e.currentTarget.style.color=t.color;e.currentTarget.style.borderBottomColor=t.color}}
-          onMouseLeave={e=>{e.currentTarget.style.color="var(--gray)";e.currentTarget.style.borderBottomColor="transparent"}}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       <div className="page">
-        <div className="hero">
+        {/* ヒーロー */}
+        <div className="hero" style={{marginBottom:20}}>
           <div className="hero-name">こんにちは、{studentInfo.name} さん 👋</div>
           <div className="hero-grade">{studentInfo.grade}</div>
           <div className="hero-date">{TODAY}</div>
         </div>
 
-        {/* 授業前テスト */}
-        <div ref={refTest} className="section">
-          <div className="sec-head">
-            <div className="sec-bar" style={{background:"#e74c3c"}} />
-            <span className="sec-label">🎯 授業前テスト</span>
+        {/* ── 1. 今週の授業予定 ── */}
+        <div className="s-section">
+          <div className="s-section-head" style={{background:"linear-gradient(135deg,#004499,#0066CC)"}}
+            onClick={()=>toggleSection("schedule")}>
+            <span className="s-section-icon">📅</span>
+            <span className="s-section-title">今週の授業予定</span>
+            <span className="s-section-arrow">{openSections.schedule!==false?"›":"›"}</span>
           </div>
-
-          {/* テスト用PDF */}
-          {pretestItems.length > 0 && (
-            <div className="tiles" style={{marginBottom:14}}>
-              {pretestItems.map(m => (
-                <div key={m.id} className="tile" onClick={()=>setSel(m)}>
-                  <div className="tile-icon" style={{background:"#fde8e8",fontSize:26,width:56,height:56,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>🎯</div>
-                  <div className="tile-body">
-                    <div className="tile-title">{m.title}</div>
-                    <div className="tile-meta">
-                      <span className="badge" style={{background:"#fde8e8",color:"#e74c3c"}}>授業前テスト</span>
-                      <span className="tile-date">{m.date}</span>
-                    </div>
+          <div className="week-wrap">
+            {weekDates.map(({date,dayName,dayNum,isToday})=>{
+              const items = schedule.filter(s=>s.date===date);
+              return (
+                <div key={date} className={`day-card ${isToday?"today":""}`}>
+                  <div className="day-label">
+                    <div className="day-name">{dayName}</div>
+                    <div className="day-date">{dayNum}</div>
                   </div>
-                  <div className="tile-arrow">›</div>
+                  <div className="day-content">
+                    {items.length===0
+                      ? <div className="day-empty">予定なし</div>
+                      : items.map(item=>(
+                          <div key={item.id} className="day-item">
+                            <span className="day-subject" style={{background:(SUBJECT_COLORS[item.subject]||"#7f8c8d")+"22",color:SUBJECT_COLORS[item.subject]||"#7f8c8d"}}>
+                              {item.subject}
+                            </span>
+                            <span className="day-text">{item.content}</span>
+                          </div>
+                        ))
+                    }
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* 正解数入力 */}
-          {todayTest ? (
-            <div style={{background:"var(--green-lt)",border:"1.5px solid var(--green)",borderRadius:14,padding:"18px 20px",display:"flex",alignItems:"center",gap:14}}>
-              <span style={{fontSize:32}}>✅</span>
-              <div>
-                <div style={{fontWeight:900,fontSize:15,color:"var(--green)",marginBottom:4}}>本日の結果を送信済み</div>
-                <div style={{fontSize:14,color:"var(--text)"}}>
-                  {todayTest.correct} / {todayTest.total} 問正解
-                  <span style={{marginLeft:8,fontWeight:700,color:todayTest.correct/todayTest.total>=0.8?"var(--green)":"var(--orange)"}}>
-                    （{Math.round(todayTest.correct/todayTest.total*100)}%）
-                  </span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div style={{background:"var(--white)",borderRadius:14,padding:"20px",boxShadow:"0 2px 10px rgba(0,0,0,.055)"}}>
-              <div style={{fontSize:13,color:"var(--gray)",marginBottom:14}}>今日のテストの結果を入力して送信してください</div>
-              <div style={{display:"flex",gap:12,marginBottom:12,flexWrap:"wrap"}}>
-                <div style={{flex:1,minWidth:120}}>
-                  <label style={{display:"block",fontSize:12,fontWeight:700,color:"var(--gray)",marginBottom:5}}>問題数</label>
-                  <input
-                    type="number" min="1" max="100"
-                    value={testTotal} onChange={e=>setTestTotal(e.target.value)}
-                    placeholder="例：10"
-                    style={{width:"100%",padding:"12px 13px",border:"1.5px solid var(--border)",borderRadius:10,fontSize:16,fontFamily:"inherit",background:"var(--bg)",outline:"none",textAlign:"center"}}
-                  />
-                </div>
-                <div style={{flex:1,minWidth:120}}>
-                  <label style={{display:"block",fontSize:12,fontWeight:700,color:"var(--gray)",marginBottom:5}}>正解数</label>
-                  <input
-                    type="number" min="0" max="100"
-                    value={testCorrect} onChange={e=>setTestCorrect(e.target.value)}
-                    placeholder="例：8"
-                    style={{width:"100%",padding:"12px 13px",border:"1.5px solid var(--border)",borderRadius:10,fontSize:16,fontFamily:"inherit",background:"var(--bg)",outline:"none",textAlign:"center"}}
-                  />
-                </div>
-              </div>
-              {testTotal && testCorrect && parseInt(testCorrect)<=parseInt(testTotal) && (
-                <div style={{textAlign:"center",fontSize:18,fontWeight:900,color:"var(--blue)",marginBottom:12}}>
-                  {Math.round(parseInt(testCorrect)/parseInt(testTotal)*100)}点
-                </div>
-              )}
-              {testMsg && <div style={{fontSize:13,fontWeight:700,color:testMsg.startsWith("✅")?"var(--green)":"var(--red)",marginBottom:8}}>{testMsg}</div>}
-              <button
-                onClick={submitTest} disabled={testSending}
-                style={{width:"100%",padding:"14px",background:"var(--blue)",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                {testSending ? "送信中..." : "📨 結果を送信する"}
-              </button>
-            </div>
-          )}
+              );
+            })}
+          </div>
         </div>
 
-        {/* 今日の授業 */}
-        <div ref={refClass} className="section">
-          <div className="sec-head">
-            <div className="sec-bar sec-bar-blue" />
-            <span className="sec-label">📖 今日の授業</span>
-            <span className="sec-count">{classItems.length}件</span>
+        {/* ── 2. 授業前テスト ── */}
+        <div className="s-section">
+          <div className="s-section-head" style={{background:"linear-gradient(135deg,#c0392b,#e74c3c)"}}
+            onClick={()=>toggleSection("test")}>
+            <span className="s-section-icon">🎯</span>
+            <span className="s-section-title">授業前テスト</span>
+            <span className="s-section-arrow">›</span>
           </div>
-          <div className="tiles">
-            {classItems.length === 0
+          {openSections.test!==false && <>
+            {pretestItems.map(m=>(
+              <SCard key={m.id} m={m} iconBg="#fde8e8" iconChar="🎯"
+                extraBadge={<span className="badge" style={{background:"#fde8e8",color:"#e74c3c"}}>テストPDF</span>} />
+            ))}
+            {todayTest ? (
+              <div className="test-done-card">
+                <div className="test-done-icon">✅</div>
+                <div>
+                  <div className="test-done-title">本日の結果を送信済み</div>
+                  <div className="test-done-score">
+                    {todayTest.correct} / {todayTest.total} 問正解
+                    <span style={{marginLeft:8,fontWeight:700,color:todayTest.correct/todayTest.total>=0.8?"var(--green)":"var(--orange)"}}>
+                      （{Math.round(todayTest.correct/todayTest.total*100)}%）
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="test-card">
+                <div style={{fontSize:13,color:"var(--gray)",marginBottom:14}}>今日のテスト結果を入力してください</div>
+                <div className="test-input-row">
+                  <div className="test-input-box">
+                    <label>問題数</label>
+                    <input type="number" min="1" max="100" value={testTotal} onChange={e=>setTestTotal(e.target.value)} placeholder="10" />
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",paddingTop:24,fontSize:20,color:"var(--gray)",fontWeight:700}}>/</div>
+                  <div className="test-input-box">
+                    <label>正解数</label>
+                    <input type="number" min="0" max="100" value={testCorrect} onChange={e=>setTestCorrect(e.target.value)} placeholder="8" />
+                  </div>
+                </div>
+                {testTotal && testCorrect && parseInt(testCorrect)<=parseInt(testTotal) && (
+                  <div className="test-score-preview">{Math.round(parseInt(testCorrect)/parseInt(testTotal)*100)}点</div>
+                )}
+                {testMsg && <div style={{fontSize:13,fontWeight:700,color:testMsg.startsWith("✅")?"var(--green)":"var(--red)",marginBottom:10,textAlign:"center"}}>{testMsg}</div>}
+                <button className="test-submit-btn" onClick={submitTest} disabled={testSending}>
+                  {testSending ? "送信中..." : "📨 結果を送信する"}
+                </button>
+              </div>
+            )}
+          </>}
+        </div>
+
+        {/* ── 3. 授業で使う資料 ── */}
+        <div className="s-section">
+          <div className="s-section-head" style={{background:"linear-gradient(135deg,#004499,#0066CC)"}}
+            onClick={()=>toggleSection("class")}>
+            <span className="s-section-icon">📚</span>
+            <span className="s-section-title">授業で使う資料</span>
+            <span className="s-section-count">{classItems.length}件</span>
+            <span className="s-section-arrow">›</span>
+          </div>
+          {openSections.class!==false && (
+            classItems.length===0
               ? <div className="empty"><div className="empty-icon">📭</div>授業資料はありません</div>
-              : classItems.map(m => <Tile key={m.id} m={m} />)}
-          </div>
+              : classItems.map(m=>(
+                  <SCard key={m.id} m={m} iconBg="var(--blue-lt)" iconChar={m.icon}
+                    extraBadge={<span className="badge badge-class">{m.sub}</span>} />
+                ))
+          )}
+          {openSections.class!==false && answerItems.length>0 && (
+            <>
+              <div style={{display:"flex",alignItems:"center",gap:8,margin:"14px 0 10px",paddingLeft:4}}>
+                <div style={{width:4,height:20,background:"var(--green)",borderRadius:2}} />
+                <span style={{fontSize:14,fontWeight:900,color:"var(--green)"}}>解答</span>
+              </div>
+              {answerItems.map(m=>(
+                <SCard key={m.id} m={m} iconBg="var(--green-lt)" iconChar="✅"
+                  extraBadge={<span className="badge badge-ans">解答</span>} />
+              ))}
+            </>
+          )}
         </div>
 
-        {/* 解答 */}
-        <div ref={refAnswer} className="section">
-          <div className="sec-head">
-            <div className="sec-bar sec-bar-green" />
-            <span className="sec-label">✅ 解答</span>
-            <span className="sec-count">{answerItems.length}件</span>
+        {/* ── 4. 宿題 ── */}
+        <div className="s-section">
+          <div className="s-section-head" style={{background:"linear-gradient(135deg,#b7500a,var(--orange))"}}
+            onClick={()=>toggleSection("hw")}>
+            <span className="s-section-icon">✏️</span>
+            <span className="s-section-title">宿題</span>
+            <span className="s-section-count">{hwItems.length}件</span>
+            <span className="s-section-arrow">›</span>
           </div>
-          <div className="tiles">
-            {answerItems.length === 0
-              ? <div className="empty"><div className="empty-icon">📭</div>解答はありません</div>
-              : answerItems.map(m => <Tile key={m.id} m={m} />)}
-          </div>
-        </div>
-
-        {/* 宿題 */}
-        <div ref={refHw} className="section">
-          <div className="sec-head">
-            <div className="sec-bar sec-bar-orange" />
-            <span className="sec-label">📝 宿題</span>
-            <span className="sec-count">{hwItems.length}件</span>
-          </div>
-          <div className="tiles">
-            {hwItems.length === 0
+          {openSections.hw!==false && (
+            hwItems.length===0
               ? <div className="empty"><div className="empty-icon">🎉</div>現在の宿題はありません</div>
-              : hwItems.map(m => <Tile key={m.id} m={m} />)}
-          </div>
-        </div>
-
-        {/* 宿題提出 */}
-        <div ref={refSubmit} className="section">
-          <div className="sec-head">
-            <div className="sec-bar sec-bar-purple" />
-            <span className="sec-label">📬 宿題提出</span>
-            <span className="sec-count">{hwSubmitItems.length}件</span>
-          </div>
-          <div className="tiles">
-            {hwSubmitItems.length === 0
-              ? <div className="empty"><div className="empty-icon">📭</div>提出できる宿題はありません</div>
-              : hwSubmitItems.map(m => {
-                  const mySub   = getMySubmission(m.id);
-                  const checked = mySub?.status === "checked";
+              : hwItems.map(m=>{
+                  const mySub  = getMySubmission(m.id);
+                  const checked = mySub?.status==="checked";
                   return (
-                    <div key={m.id}
-                      className={`tile ${checked?"tile-checked":mySub?"tile-submitted":""}`}
-                      onClick={()=>setSel(m)}>
-                      <div className="tile-icon" style={{background:"var(--purple-lt)",fontSize:26,width:56,height:56,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>📬</div>
-                      <div className="tile-body">
-                        <div className="tile-title">{m.title}</div>
-                        <div className="tile-meta">
-                          {checked   && <span className="badge badge-done">👀 確認済み</span>}
+                    <div key={m.id} className={`s-card ${checked?"checked":mySub?"submitted":""}`} onClick={()=>setSel(m)}>
+                      <div className="s-card-icon" style={{background:"var(--orange-lt)"}}>📝</div>
+                      <div className="s-card-body">
+                        <div className="s-card-title">{m.title}</div>
+                        <div className="s-card-meta">
+                          <SubjBadge subject={m.subject} />
+                          {checked && <span className="badge badge-done">👀 確認済み</span>}
                           {mySub && !checked && <span className="badge" style={{background:"var(--purple-lt)",color:"var(--purple)"}}>✅ 提出済</span>}
-                          {!mySub    && <span className="badge" style={{background:"var(--orange-lt)",color:"var(--orange)"}}>未提出</span>}
+                          {!mySub && <span className="badge" style={{background:"var(--orange-lt)",color:"var(--orange)"}}>📬 未提出</span>}
                           {m.deadline && <span className="tile-deadline">⚠ 期限 {m.deadline}</span>}
                         </div>
                       </div>
-                      <div className="tile-arrow">›</div>
+                      <div className="s-card-arrow">›</div>
                     </div>
                   );
                 })
-            }
-          </div>
+          )}
         </div>
+
       </div>
       {sel && sel.type === "hw" && (
         <HwSheet m={sel} mySubmission={getMySubmission(sel.id)} studentInfo={studentInfo}
           onClose={()=>setSel(null)} onSubmit={()=>setSel(null)} />
       )}
       {sel && sel.type !== "hw" && <ContentSheet m={sel} onClose={()=>setSel(null)} />}
+    </>
+  );
+}
+
+
+// ─────────────────────────────────────────
+// SCHEDULE TAB（授業予定・講師用）
+// ─────────────────────────────────────────
+function ScheduleTab({ students }) {
+  const DAY_NAMES = ["日","月","火","水","木","金","土"];
+  const [scheduleItems, setScheduleItems] = useState([]);
+  const [form, setForm] = useState({ date:"", subject:"英語", content:"" });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    const unsub = onSnapshot(query(collection(db,"schedule"),orderBy("date","asc")), snap => {
+      setScheduleItems(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    return unsub;
+  }, []);
+
+  // 今日から7日
+  const weekDates = Array.from({length:7},(_,i)=>{
+    const d = new Date(); d.setDate(d.getDate()+i);
+    return { date: d.toISOString().slice(0,10), dayName: DAY_NAMES[d.getDay()], dayNum: d.getDate(), isToday: i===0 };
+  });
+
+  async function handleAdd() {
+    if (!form.date || !form.content) { setMsg("⚠ 日付と内容を入力してください"); return; }
+    setSaving(true); setMsg("");
+    try {
+      await addDoc(collection(db,"schedule"), {
+        date: form.date, subject: form.subject, content: form.content,
+        createdAt: serverTimestamp(),
+      });
+      setMsg("✅ 追加しました");
+      setForm(f=>({...f, content:""}));
+    } catch(e) { setMsg("⚠ エラー："+e.message); }
+    setSaving(false);
+  }
+
+  async function handleDelete(id) {
+    await deleteDoc(doc(db,"schedule",id));
+  }
+
+  return (
+    <>
+      {/* 追加フォーム */}
+      <div className="form-card" style={{marginBottom:20}}>
+        <h2>📅 授業予定を追加</h2>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+          <div className="form-row" style={{margin:0}}>
+            <label>日付</label>
+            <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} />
+          </div>
+          <div className="form-row" style={{margin:0}}>
+            <label>教科</label>
+            <select value={form.subject} onChange={e=>setForm(f=>({...f,subject:e.target.value}))}>
+              {SUBJECTS.map(s=><option key={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="form-row">
+          <label>授業内容</label>
+          <input value={form.content} onChange={e=>setForm(f=>({...f,content:e.target.value}))}
+            placeholder="例：二次方程式の解き方・長文読解テスト" onKeyDown={e=>e.key==="Enter"&&handleAdd()} />
+        </div>
+        <button className="btn-submit" onClick={handleAdd} disabled={saving}>
+          {saving?"追加中...":"＋ 追加する"}
+        </button>
+        {msg && <span style={{marginLeft:12,fontSize:13,fontWeight:700,color:msg.startsWith("✅")?"var(--green)":"var(--red)"}}>{msg}</span>}
+      </div>
+
+      {/* 週間カレンダー */}
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {weekDates.map(({date,dayName,dayNum,isToday})=>{
+          const items = scheduleItems.filter(s=>s.date===date);
+          return (
+            <div key={date} style={{
+              background:"#fff",borderRadius:14,padding:"14px 16px",
+              boxShadow:"0 2px 8px rgba(0,0,0,.055)",
+              border: isToday?"2px solid var(--blue)":"2px solid transparent",
+              background: isToday?"var(--blue-lt)":"#fff"
+            }}>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:items.length>0?10:0}}>
+                <div style={{textAlign:"center",minWidth:44}}>
+                  <div style={{fontSize:11,fontWeight:900,color:isToday?"var(--blue)":"var(--gray)"}}>{dayName}曜日</div>
+                  <div style={{fontSize:20,fontWeight:900,color:isToday?"var(--blue)":"var(--navy)"}}>{dayNum}</div>
+                </div>
+                {items.length===0 && <div style={{fontSize:13,color:"var(--gray)",fontStyle:"italic"}}>予定なし</div>}
+              </div>
+              {items.map(item=>(
+                <div key={item.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderTop:"1px solid var(--border)"}}>
+                  <span style={{
+                    fontSize:12,fontWeight:900,padding:"2px 10px",borderRadius:10,flexShrink:0,
+                    background:(SUBJECT_COLORS[item.subject]||"#7f8c8d")+"22",
+                    color:SUBJECT_COLORS[item.subject]||"#7f8c8d"
+                  }}>{item.subject}</span>
+                  <span style={{fontSize:14,flex:1}}>{item.content}</span>
+                  <button className="btn-del" onClick={()=>handleDelete(item.id)} style={{flexShrink:0}}>削除</button>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
     </>
   );
 }
@@ -1176,7 +1352,8 @@ function TeacherApp({ onLogout }) {
   const [materials,   setMaterials]   = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [testResults, setTestResults] = useState([]);
-  const [form,        setForm]        = useState({ title:"", sub:"PDF", url:"", deadline:"", targets:[] });
+  const [schedule,    setSchedule]    = useState([]);
+  const [form,        setForm]        = useState({ title:"", sub:"PDF", subject:"英語", url:"", deadline:"", targets:[] });
   const [uploadFile,  setUploadFile]  = useState(null);
   const [uploading,   setUploading]   = useState(false);
   const [done,        setDone]        = useState(false);
@@ -1185,8 +1362,9 @@ function TeacherApp({ onLogout }) {
     const unsubS   = onSnapshot(collection(db, "students"),  snap => setStudentsState(snap.docs.map(d=>({id:d.id,...d.data()}))));
     const unsubM   = onSnapshot(query(collection(db,"materials"),orderBy("date","desc")), snap => setMaterials(snap.docs.map(d=>({id:d.id,...d.data()}))));
     const unsubSub = onSnapshot(query(collection(db,"submissions"),orderBy("submittedAt","desc")), snap => setSubmissions(snap.docs.map(d=>({id:d.id,...d.data()}))));
-    const unsubTest = onSnapshot(query(collection(db,"testResults"),orderBy("date","desc")), snap => setTestResults(snap.docs.map(d=>({id:d.id,...d.data()}))));
-    return () => { unsubS(); unsubM(); unsubSub(); unsubTest(); };
+    const unsubTest  = onSnapshot(query(collection(db,"testResults"),orderBy("date","desc")), snap => setTestResults(snap.docs.map(d=>({id:d.id,...d.data()}))));
+    const unsubSched = onSnapshot(query(collection(db,"schedule"),orderBy("date","asc")), snap => setSchedule(snap.docs.map(d=>({id:d.id,...d.data()}))));
+    return () => { unsubS(); unsubM(); unsubSub(); unsubTest(); unsubSched(); };
   }, []);
 
   // ── 教材配信 ──
@@ -1206,7 +1384,7 @@ function TeacherApp({ onLogout }) {
       const icon = SUB_TO_ICON[form.sub] || "📄";
       const type = SUB_TO_TYPE[form.sub] || "class";
       await addDoc(collection(db, "materials"), {
-        title: form.title, sub: form.sub, type, icon, url: finalUrl,
+        title: form.title, sub: form.sub, subject: form.subject||"その他", type, icon, url: finalUrl,
         date: new Date().toISOString().slice(0,10),
         targets: form.targets,
         ...(form.deadline ? {deadline: form.deadline} : {}),
@@ -1259,6 +1437,7 @@ function TeacherApp({ onLogout }) {
 
   const TABS = [
     {id:"home",       label:"🏠 ホーム"},
+    {id:"schedule",   label:"📅 予定"},
     {id:"upload",     label:"📤 配信"},
     {id:"list",       label:"📋 一覧"},
     {id:"submissions",label:"📬 提出物", badge:uncheckedCount},
@@ -1319,6 +1498,11 @@ function TeacherApp({ onLogout }) {
             <div className="form-row"><label>種別</label>
               <select value={form.sub} onChange={e=>setForm(f=>({...f,sub:e.target.value}))}>
                 <option>PDF</option><option>スライド</option><option>動画</option><option>宿題</option><option>解答</option><option>授業前テスト</option>
+              </select>
+            </div>
+            <div className="form-row"><label>教科</label>
+              <select value={form.subject} onChange={e=>setForm(f=>({...f,subject:e.target.value}))}>
+                {SUBJECTS.map(s=><option key={s}>{s}</option>)}
               </select>
             </div>
             <div className="form-row">
@@ -1407,6 +1591,10 @@ function TeacherApp({ onLogout }) {
               );
             })}
           </>
+        )}
+
+        {tab==="schedule" && (
+          <ScheduleTab students={students} />
         )}
 
         {tab==="records" && (
