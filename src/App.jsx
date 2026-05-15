@@ -255,6 +255,20 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 .day-subject{font-size:12px;font-weight:900;padding:2px 8px;border-radius:10px;flex-shrink:0}
 .day-text{font-size:14px;color:var(--text);line-height:1.4}
 .day-empty{font-size:13px;color:var(--gray);font-style:italic}
+
+/* ホワイトボード */
+.wb-wrap{background:#fff;border-radius:16px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.06);margin-bottom:16px}
+.wb-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.wb-tool-btn{padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+.wb-tool-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+.wb-tool-btn:hover:not(.active){background:var(--bg)}
+.wb-color-btn{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:all .15s}
+.wb-color-btn.active{border-color:var(--navy);transform:scale(1.2)}
+.wb-canvas{width:100%;touch-action:none;cursor:crosshair;border-radius:12px;border:1.5px solid var(--border);display:block;background:#fafafa}
+.wb-actions{display:flex;gap:8px;margin-top:10px;justify-content:flex-end}
+.wb-student-select{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.wb-student-btn{padding:8px 16px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+.wb-student-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
 @media(max-width:520px){
   .topbar{padding:0 12px}.topbar-user{max-width:90px}
   .page{padding:14px 10px 60px}
@@ -266,6 +280,152 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
   .cmodal-foot{flex-direction:column-reverse}.btn-save,.btn-cancel{width:100%;text-align:center}
 }
 `;
+
+// ─────────────────────────────────────────
+// WHITEBOARD COMPONENT（boardIdベース・汎用）
+// ─────────────────────────────────────────
+function Whiteboard({ boardId, boardLabel, readOnly }) {
+  const canvasRef   = useRef(null);
+  const drawing     = useRef(false);
+  const lastPos     = useRef(null);
+  const ignoreNext  = useRef(false);
+  const [tool, setTool]   = useState("pen");
+  const [color, setColor] = useState("#1a2535");
+  const [size, setSize]   = useState(3);
+  const [saving, setSaving] = useState(false);
+  const COLORS = ["#1a2535","#e74c3c","#2e86de","#27ae60","#e67e22","#8e44ad","#ffffff"];
+
+  // Firestoreからリアルタイム同期
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "whiteboards", boardId), (snap) => {
+      if (!snap.exists() || ignoreNext.current) { ignoreNext.current = false; return; }
+      const data = snap.data();
+      if (!data.imageData) {
+        const canvas = canvasRef.current;
+        if (canvas) canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
+        return;
+      }
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const img = new Image();
+      img.onload = () => {
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+      };
+      img.src = data.imageData;
+    });
+    return unsub;
+  }, [boardId]);
+
+  // キャンバスサイズ
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width  = rect.width;
+      canvas.height = Math.max(320, rect.width * 0.6);
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+
+  function getPos(e, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const src = e.touches ? e.touches[0] : e;
+    return { x: (src.clientX - rect.left)*scaleX, y: (src.clientY - rect.top)*scaleY };
+  }
+
+  function startDraw(e) {
+    if (readOnly) return;
+    e.preventDefault();
+    drawing.current = true;
+    lastPos.current = getPos(e, canvasRef.current);
+  }
+
+  function draw(e) {
+    if (!drawing.current || readOnly) return;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const pos = getPos(e, canvas);
+    ctx.beginPath();
+    ctx.moveTo(lastPos.current.x, lastPos.current.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = tool==="eraser" ? "#fafafa" : color;
+    ctx.lineWidth   = tool==="eraser" ? size*6 : size;
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.stroke();
+    lastPos.current = pos;
+  }
+
+  async function endDraw(e) {
+    if (!drawing.current || readOnly) return;
+    e.preventDefault();
+    drawing.current = false;
+    lastPos.current = null;
+    setSaving(true);
+    try {
+      ignoreNext.current = true;
+      const imageData = canvasRef.current.toDataURL("image/png", 0.6);
+      await setDoc(doc(db,"whiteboards",boardId), {
+        imageData, updatedAt: serverTimestamp(), boardId, boardLabel: boardLabel||boardId,
+      }, { merge: true });
+    } catch(e) { console.error(e); }
+    setSaving(false);
+  }
+
+  async function handleClear() {
+    if (!window.confirm("ホワイトボードを全消ししますか？")) return;
+    const canvas = canvasRef.current;
+    canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
+    await setDoc(doc(db,"whiteboards",boardId), {
+      imageData:"", updatedAt:serverTimestamp(), boardId, boardLabel:boardLabel||boardId,
+    }, { merge: true });
+  }
+
+  return (
+    <div className="wb-wrap">
+      {!readOnly && (
+        <div className="wb-toolbar">
+          <button className={`wb-tool-btn ${tool==="pen"?"active":""}`} onClick={()=>setTool("pen")}>✏️ ペン</button>
+          <button className={`wb-tool-btn ${tool==="eraser"?"active":""}`} onClick={()=>setTool("eraser")}>🧹 消しゴム</button>
+          <div style={{width:1,height:24,background:"var(--border)",margin:"0 4px"}} />
+          {COLORS.map(c=>(
+            <div key={c} className={`wb-color-btn ${color===c&&tool==="pen"?"active":""}`}
+              style={{background:c,border:c==="#ffffff"?"2px solid #ccc":undefined}}
+              onClick={()=>{setColor(c);setTool("pen")}} />
+          ))}
+          <div style={{width:1,height:24,background:"var(--border)",margin:"0 4px"}} />
+          <select value={size} onChange={e=>setSize(Number(e.target.value))}
+            style={{padding:"4px 8px",borderRadius:8,border:"1.5px solid var(--border)",fontSize:13,fontFamily:"inherit",background:"var(--bg)"}}>
+            <option value={2}>細い</option><option value={4}>普通</option><option value={8}>太い</option>
+          </select>
+          {saving && <span style={{fontSize:12,color:"var(--gray)"}}>保存中...</span>}
+        </div>
+      )}
+      <canvas ref={canvasRef} className="wb-canvas"
+        style={{cursor:readOnly?"default":tool==="eraser"?"cell":"crosshair"}}
+        onMouseDown={startDraw} onMouseMove={draw} onMouseUp={endDraw} onMouseLeave={endDraw}
+        onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw}
+      />
+      {!readOnly && (
+        <div className="wb-actions">
+          <button className="btn-del" onClick={handleClear}>🗑 全消し</button>
+        </div>
+      )}
+      {readOnly && (
+        <div style={{textAlign:"center",fontSize:12,color:"var(--gray)",marginTop:8}}>
+          👀 閲覧のみ
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────
 // LOADING
@@ -889,6 +1049,47 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
           )}
         </div>
 
+        {/* ── 5. ホワイトボード ── */}
+        <div className="s-section">
+          <div className="s-section-head" style={{background:"linear-gradient(135deg,#1a5276,#2e86de)"}}
+            onClick={()=>toggleSection("wb")}>
+            <span className="s-section-icon">🖊</span>
+            <span className="s-section-title">ホワイトボード</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,.7)",marginLeft:"auto",marginRight:8}}>先生とリアルタイム共有</span>
+            <span className="s-section-arrow">›</span>
+          </div>
+          {openSections.wb!==false && (
+            <>
+              {/* 全体ボード（講師から全員向け） */}
+              <div style={{marginBottom:8}}>
+                <div style={{fontSize:12,fontWeight:700,color:"var(--gray)",marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{background:"#004499",color:"#fff",padding:"1px 8px",borderRadius:10,fontSize:11}}>全体</span>
+                  講師からの全体ボード（閲覧のみ）
+                </div>
+                <Whiteboard boardId="global" boardLabel="全体ボード" readOnly={true} />
+              </div>
+              {/* グループボード */}
+              {studentInfo.groupId && (
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"var(--gray)",marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{background:"#27ae60",color:"#fff",padding:"1px 8px",borderRadius:10,fontSize:11}}>グループ</span>
+                    グループボード（閲覧のみ）
+                  </div>
+                  <Whiteboard boardId={`group_${studentInfo.groupId}`} boardLabel="グループボード" readOnly={true} />
+                </div>
+              )}
+              {/* 個人ボード（双方向） */}
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:"var(--gray)",marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{background:"#7b52ab",color:"#fff",padding:"1px 8px",borderRadius:10,fontSize:11}}>個人</span>
+                  自分のボード（先生と共有・書き込み可）
+                </div>
+                <Whiteboard boardId={`student_${studentInfo.studentId}`} boardLabel={studentInfo.name} readOnly={false} />
+              </div>
+            </>
+          )}
+        </div>
+
       </div>
       {sel && sel.type === "hw" && (
         <HwSheet m={sel} mySubmission={getMySubmission(sel.id)} studentInfo={studentInfo}
@@ -1009,6 +1210,110 @@ function ScheduleTab({ students, groups }) {
           );
         })}
       </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────
+// TEACHER WHITEBOARD TAB
+// ─────────────────────────────────────────
+function TeacherWhiteboardTab({ students, groups }) {
+  const [boardType, setBoardType] = useState("global"); // global | group | student
+  const [selectedGroupId,   setSelectedGroupId]   = useState(null);
+  const [selectedStudentId, setSelectedStudentId] = useState(null);
+
+  useEffect(() => {
+    if (groups.length > 0 && !selectedGroupId)     setSelectedGroupId(groups[0].id);
+    if (students.length > 0 && !selectedStudentId) setSelectedStudentId(students[0].studentId);
+  }, [groups, students]);
+
+  const BOARD_TYPES = [
+    { id:"global",  label:"🌐 全体ボード",    desc:"全生徒に表示されます" },
+    { id:"group",   label:"🏫 グループボード", desc:"グループ別に表示されます" },
+    { id:"student", label:"👤 個人ボード",    desc:"生徒と1対1で共有" },
+  ];
+
+  function getBoardId() {
+    if (boardType==="global")  return "global";
+    if (boardType==="group")   return `group_${selectedGroupId}`;
+    if (boardType==="student") return `student_${selectedStudentId}`;
+    return "global";
+  }
+
+  function getBoardLabel() {
+    if (boardType==="global")  return "全体ボード";
+    if (boardType==="group")   return groups.find(g=>g.id===selectedGroupId)?.name||"グループボード";
+    if (boardType==="student") return students.find(s=>s.studentId===selectedStudentId)?.name||"個人ボード";
+    return "";
+  }
+
+  return (
+    <>
+      {/* ボード種別選択 */}
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+        {BOARD_TYPES.map(bt=>(
+          <button key={bt.id}
+            className={`wb-student-btn ${boardType===bt.id?"active":""}`}
+            style={{flex:"1 1 auto"}}
+            onClick={()=>setBoardType(bt.id)}>
+            {bt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* グループ選択 */}
+      {boardType==="group" && (
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:700,color:"var(--gray)",marginBottom:6}}>グループを選択</div>
+          <div className="wb-student-select">
+            {groups.map(g=>(
+              <button key={g.id}
+                className={`wb-student-btn ${selectedGroupId===g.id?"active":""}`}
+                onClick={()=>setSelectedGroupId(g.id)}>
+                {g.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 生徒選択 */}
+      {boardType==="student" && (
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:700,color:"var(--gray)",marginBottom:6}}>生徒を選択</div>
+          <div className="wb-student-select">
+            {students.map(s=>(
+              <button key={s.id}
+                className={`wb-student-btn ${selectedStudentId===s.studentId?"active":""}`}
+                onClick={()=>setSelectedStudentId(s.studentId)}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ボードの説明バナー */}
+      <div style={{
+        display:"flex",alignItems:"center",gap:10,marginBottom:12,
+        padding:"12px 16px",borderRadius:12,
+        background: boardType==="global"?"var(--blue-lt)": boardType==="group"?"var(--green-lt)":"var(--purple-lt)",
+      }}>
+        <span style={{fontSize:20}}>{boardType==="global"?"🌐":boardType==="group"?"🏫":"👤"}</span>
+        <div>
+          <div style={{fontWeight:900,fontSize:15,color:"var(--navy)"}}>{getBoardLabel()}</div>
+          <div style={{fontSize:12,color:"var(--gray)"}}>
+            {BOARD_TYPES.find(b=>b.id===boardType)?.desc}・リアルタイム同期
+          </div>
+        </div>
+      </div>
+
+      {/* ホワイトボード本体 */}
+      <Whiteboard
+        boardId={getBoardId()}
+        boardLabel={getBoardLabel()}
+        readOnly={false}
+      />
     </>
   );
 }
@@ -1693,6 +1998,7 @@ function TeacherApp({ onLogout }) {
     {id:"upload",     label:"📤 配信"},
     {id:"list",       label:"📋 一覧"},
     {id:"submissions",label:"📬 提出物", badge:uncheckedCount},
+    {id:"whiteboard", label:"🖊 ボード"},
     {id:"records",    label:"📊 成績"},
     {id:"students",   label:"👥 生徒"},
     {id:"groups",     label:"🏫 グループ"},
@@ -1882,6 +2188,10 @@ function TeacherApp({ onLogout }) {
 
         {tab==="schedule" && (
           <ScheduleTab students={students} groups={groups} />
+        )}
+
+        {tab==="whiteboard" && (
+          <TeacherWhiteboardTab students={students} groups={groups} />
         )}
 
         {tab==="records" && (
