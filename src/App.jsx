@@ -299,26 +299,43 @@ function Whiteboard({ boardId, boardLabel, readOnly }) {
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "whiteboards", boardId), async (snap) => {
       if (!snap.exists()) return;
-      if (skipNext.current) { skipNext.current = false; return; }
-      const { imageUrl } = snap.data();
-      if (!imageUrl) {
-        const canvas = canvasRef.current;
-        if (canvas) canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
-        return;
-      }
+      // 自分が書き込んだ直後はスキップ（書き込み側のみ）
+      if (!readOnly && skipNext.current) { skipNext.current = false; return; }
+      const data = snap.data();
+      const imageUrl = data?.imageUrl;
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        const ctx = canvas.getContext("2d");
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        ctx.drawImage(img,0,0);
-      };
-      img.src = imageUrl + "?t=" + Date.now(); // キャッシュ回避
+      if (!imageUrl) {
+        canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
+        return;
+      }
+      // Firebase StorageのURLをfetchしてBlobで読み込む（CORS回避）
+      try {
+        const res = await fetch(imageUrl);
+        const blob = await res.blob();
+        const localUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          ctx.drawImage(img,0,0);
+          URL.revokeObjectURL(localUrl);
+        };
+        img.src = localUrl;
+      } catch(err) {
+        // fetchが失敗した場合は直接srcを試みる
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          ctx.drawImage(img,0,0);
+        };
+        img.src = imageUrl + "?t=" + Date.now();
+      }
     });
     return unsub;
-  }, [boardId]);
+  }, [boardId, readOnly]);
 
   // キャンバスサイズ
   useEffect(() => {
