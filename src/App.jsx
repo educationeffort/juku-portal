@@ -282,25 +282,26 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text
 `;
 
 // ─────────────────────────────────────────
-// WHITEBOARD COMPONENT（boardIdベース・汎用）
+// WHITEBOARD COMPONENT（Storageベース・グループ＆個人）
 // ─────────────────────────────────────────
 function Whiteboard({ boardId, boardLabel, readOnly }) {
-  const canvasRef   = useRef(null);
-  const drawing     = useRef(false);
-  const lastPos     = useRef(null);
-  const ignoreNext  = useRef(false);
-  const [tool, setTool]   = useState("pen");
-  const [color, setColor] = useState("#1a2535");
-  const [size, setSize]   = useState(3);
+  const canvasRef  = useRef(null);
+  const drawing    = useRef(false);
+  const lastPos    = useRef(null);
+  const skipNext   = useRef(false);
+  const [tool,   setTool]   = useState("pen");
+  const [color,  setColor]  = useState("#1a2535");
+  const [size,   setSize]   = useState(3);
   const [saving, setSaving] = useState(false);
   const COLORS = ["#1a2535","#e74c3c","#2e86de","#27ae60","#e67e22","#8e44ad","#ffffff"];
 
-  // Firestoreからリアルタイム同期
+  // Firestoreでキャンバス更新を検知 → StorageのURLから画像を読み込む
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, "whiteboards", boardId), (snap) => {
-      if (!snap.exists() || ignoreNext.current) { ignoreNext.current = false; return; }
-      const data = snap.data();
-      if (!data.imageData) {
+    const unsub = onSnapshot(doc(db, "whiteboards", boardId), async (snap) => {
+      if (!snap.exists()) return;
+      if (skipNext.current) { skipNext.current = false; return; }
+      const { imageUrl } = snap.data();
+      if (!imageUrl) {
         const canvas = canvasRef.current;
         if (canvas) canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
         return;
@@ -308,12 +309,13 @@ function Whiteboard({ boardId, boardLabel, readOnly }) {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const img = new Image();
+      img.crossOrigin = "anonymous";
       img.onload = () => {
         const ctx = canvas.getContext("2d");
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0);
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img,0,0);
       };
-      img.src = data.imageData;
+      img.src = imageUrl + "?t=" + Date.now(); // キャッシュ回避
     });
     return unsub;
   }, [boardId]);
@@ -337,7 +339,7 @@ function Whiteboard({ boardId, boardLabel, readOnly }) {
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     const src = e.touches ? e.touches[0] : e;
-    return { x: (src.clientX - rect.left)*scaleX, y: (src.clientY - rect.top)*scaleY };
+    return { x:(src.clientX-rect.left)*scaleX, y:(src.clientY-rect.top)*scaleY };
   }
 
   function startDraw(e) {
@@ -370,21 +372,26 @@ function Whiteboard({ boardId, boardLabel, readOnly }) {
     lastPos.current = null;
     setSaving(true);
     try {
-      ignoreNext.current = true;
-      const imageData = canvasRef.current.toDataURL("image/png", 0.6);
+      // 1. CanvasをBlobに変換
+      const blob = await new Promise(res => canvasRef.current.toBlob(res, "image/png", 0.7));
+      // 2. Firebase Storageにアップロード
+      const storageRef = ref(storage, `whiteboards/${boardId}.png`);
+      await uploadBytes(storageRef, blob);
+      const imageUrl = await getDownloadURL(storageRef);
+      // 3. FirestoreにURLだけ保存（数十バイト）
+      skipNext.current = true;
       await setDoc(doc(db,"whiteboards",boardId), {
-        imageData, updatedAt: serverTimestamp(), boardId, boardLabel: boardLabel||boardId,
+        imageUrl, updatedAt: serverTimestamp(), boardId, boardLabel: boardLabel||boardId,
       }, { merge: true });
-    } catch(e) { console.error(e); }
+    } catch(err) { console.error(err); }
     setSaving(false);
   }
 
   async function handleClear() {
     if (!window.confirm("ホワイトボードを全消ししますか？")) return;
-    const canvas = canvasRef.current;
-    canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
+    canvasRef.current.getContext("2d").clearRect(0,0,canvasRef.current.width,canvasRef.current.height);
     await setDoc(doc(db,"whiteboards",boardId), {
-      imageData:"", updatedAt:serverTimestamp(), boardId, boardLabel:boardLabel||boardId,
+      imageUrl:"", updatedAt:serverTimestamp(), boardId, boardLabel:boardLabel||boardId,
     }, { merge: true });
   }
 
@@ -405,7 +412,7 @@ function Whiteboard({ boardId, boardLabel, readOnly }) {
             style={{padding:"4px 8px",borderRadius:8,border:"1.5px solid var(--border)",fontSize:13,fontFamily:"inherit",background:"var(--bg)"}}>
             <option value={2}>細い</option><option value={4}>普通</option><option value={8}>太い</option>
           </select>
-          {saving && <span style={{fontSize:12,color:"var(--gray)"}}>保存中...</span>}
+          {saving && <span style={{fontSize:12,color:"var(--gray)",marginLeft:4}}>保存中...</span>}
         </div>
       )}
       <canvas ref={canvasRef} className="wb-canvas"
@@ -419,9 +426,7 @@ function Whiteboard({ boardId, boardLabel, readOnly }) {
         </div>
       )}
       {readOnly && (
-        <div style={{textAlign:"center",fontSize:12,color:"var(--gray)",marginTop:8}}>
-          👀 閲覧のみ
-        </div>
+        <div style={{textAlign:"center",fontSize:12,color:"var(--gray)",marginTop:8}}>👀 閲覧のみ</div>
       )}
     </div>
   );
@@ -1060,17 +1065,9 @@ function StudentApp({ firebaseUser, studentInfo, onLogout }) {
           </div>
           {openSections.wb!==false && (
             <>
-              {/* 全体ボード（講師から全員向け） */}
-              <div style={{marginBottom:8}}>
-                <div style={{fontSize:12,fontWeight:700,color:"var(--gray)",marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
-                  <span style={{background:"#004499",color:"#fff",padding:"1px 8px",borderRadius:10,fontSize:11}}>全体</span>
-                  講師からの全体ボード（閲覧のみ）
-                </div>
-                <Whiteboard boardId="global" boardLabel="全体ボード" readOnly={true} />
-              </div>
-              {/* グループボード */}
+              {/* グループボード（閲覧） */}
               {studentInfo.groupId && (
-                <div style={{marginBottom:8}}>
+                <div style={{marginBottom:12}}>
                   <div style={{fontSize:12,fontWeight:700,color:"var(--gray)",marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
                     <span style={{background:"#27ae60",color:"#fff",padding:"1px 8px",borderRadius:10,fontSize:11}}>グループ</span>
                     グループボード（閲覧のみ）
@@ -1218,7 +1215,7 @@ function ScheduleTab({ students, groups }) {
 // TEACHER WHITEBOARD TAB
 // ─────────────────────────────────────────
 function TeacherWhiteboardTab({ students, groups }) {
-  const [boardType, setBoardType] = useState("global"); // global | group | student
+  const [boardType, setBoardType] = useState("group"); // global | group | student
   const [selectedGroupId,   setSelectedGroupId]   = useState(null);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
 
@@ -1228,20 +1225,17 @@ function TeacherWhiteboardTab({ students, groups }) {
   }, [groups, students]);
 
   const BOARD_TYPES = [
-    { id:"global",  label:"🌐 全体ボード",    desc:"全生徒に表示されます" },
-    { id:"group",   label:"🏫 グループボード", desc:"グループ別に表示されます" },
-    { id:"student", label:"👤 個人ボード",    desc:"生徒と1対1で共有" },
+    { id:"group",   label:"🏫 グループボード", desc:"グループ全員に表示されます" },
+    { id:"student", label:"👤 個人ボード",    desc:"生徒と1対1で共有・双方向" },
   ];
 
   function getBoardId() {
-    if (boardType==="global")  return "global";
     if (boardType==="group")   return `group_${selectedGroupId}`;
     if (boardType==="student") return `student_${selectedStudentId}`;
-    return "global";
+    return `group_${selectedGroupId}`;
   }
 
   function getBoardLabel() {
-    if (boardType==="global")  return "全体ボード";
     if (boardType==="group")   return groups.find(g=>g.id===selectedGroupId)?.name||"グループボード";
     if (boardType==="student") return students.find(s=>s.studentId===selectedStudentId)?.name||"個人ボード";
     return "";
@@ -1297,9 +1291,9 @@ function TeacherWhiteboardTab({ students, groups }) {
       <div style={{
         display:"flex",alignItems:"center",gap:10,marginBottom:12,
         padding:"12px 16px",borderRadius:12,
-        background: boardType==="global"?"var(--blue-lt)": boardType==="group"?"var(--green-lt)":"var(--purple-lt)",
+        background: boardType==="group"?"var(--green-lt)":"var(--purple-lt)",
       }}>
-        <span style={{fontSize:20}}>{boardType==="global"?"🌐":boardType==="group"?"🏫":"👤"}</span>
+        <span style={{fontSize:20}}>{boardType==="group"?"🏫":"👤"}</span>
         <div>
           <div style={{fontWeight:900,fontSize:15,color:"var(--navy)"}}>{getBoardLabel()}</div>
           <div style={{fontSize:12,color:"var(--gray)"}}>
